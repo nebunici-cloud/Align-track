@@ -128,8 +128,36 @@ export const INITIAL_NOTIFICATIONS: NotificationLog[] = [
   },
 ];
 
+/**
+ * Formats a Date as YYYY-MM-DD in the user's local timezone.
+ * Using toISOString() here would shift the date to UTC, which can
+ * misattribute logs to the wrong day near midnight in local time.
+ */
+export function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function getTodayDateString(): string {
-  return new Date().toISOString().split('T')[0];
+  return formatLocalDate(new Date());
+}
+
+/** Reads a File into a base64 data URL. Used only as an offline/no-account fallback for photos. */
+export function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Failed to read file as data URL'));
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 /**
@@ -199,7 +227,7 @@ export function calculateWearStreak(logs: WearLog[], settings: AlignerSettings):
 
   for (let i = 0; i < 365; i++) {
     const d = new Date(now.getTime() - i * 86400000);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(d);
 
     // Cannot count days before treatment plan started
     if (dateStr < planStartStr) {

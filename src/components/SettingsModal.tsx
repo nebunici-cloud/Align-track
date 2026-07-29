@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { AlignerSettings, WearLog } from '../types';
 import { User as FirebaseUser } from '../lib/firebase';
+import { formatLocalDate } from '../utils/storage';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -316,7 +317,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <label className="text-[10px] text-slate-400 block mb-1">Plan Start Date</label>
                   <input
                     type="date"
-                    value={formData.planStartDate || new Date().toISOString().split('T')[0]}
+                    value={formData.planStartDate || formatLocalDate(new Date())}
                     onChange={(e) => setFormData({ ...formData, planStartDate: e.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg p-2 text-xs focus:ring-1 focus:ring-teal-400"
                   />

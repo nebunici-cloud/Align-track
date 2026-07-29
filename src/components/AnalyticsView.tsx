@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { BarChart3, TrendingUp, Award, Download, Copy, Check, Calendar, FileText, PieChart } from 'lucide-react';
 import { WearLog, AlignerSettings } from '../types';
-import { calculateWearStreak, getTodayDateString, getAvailableMinutesForDate } from '../utils/storage';
+import { calculateWearStreak, getTodayDateString, getAvailableMinutesForDate, formatLocalDate } from '../utils/storage';
 
 interface AnalyticsViewProps {
   logs: WearLog[];
@@ -19,7 +19,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ logs, settings }) 
 
   for (let i = 6; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400000);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(d);
     const dayName = daysOfWeek[d.getDay()];
 
     const { availableMins, isBeforeStart, isPlanStartDay } = getAvailableMinutesForDate(dateStr, settings);

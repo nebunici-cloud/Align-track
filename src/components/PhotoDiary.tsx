@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Camera, Plus, Trash2, Calendar, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { PhotoEntry, AlignerSettings } from '../types';
+import { formatLocalDate } from '../utils/storage';
 
 interface PhotoDiaryProps {
   photos: PhotoEntry[];
   settings: AlignerSettings;
-  onAddPhoto: (photo: Omit<PhotoEntry, 'id'>) => void;
+  onAddPhoto: (photo: Omit<PhotoEntry, 'id'>, file?: File) => void;
   onDeletePhoto: (id: string) => void;
 }
 
@@ -17,7 +18,8 @@ export const PhotoDiary: React.FC<PhotoDiaryProps> = ({
 }) => {
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [selectedTray, setSelectedTray] = useState<number>(settings.currentTray);
-  const [photoUrl, setPhotoUrl] = useState<string>('');
+  const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [photoNote, setPhotoNote] = useState<string>('');
 
   const SAMPLE_PHOTOS = [
@@ -29,10 +31,11 @@ export const PhotoDiary: React.FC<PhotoDiaryProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setSelectedFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         if (typeof reader.result === 'string') {
-          setPhotoUrl(reader.result);
+          setPreviewUrl(reader.result);
         }
       };
       reader.readAsDataURL(file);
@@ -40,16 +43,21 @@ export const PhotoDiary: React.FC<PhotoDiaryProps> = ({
   };
 
   const handleSavePhoto = () => {
-    const finalUrl = photoUrl.trim() || SAMPLE_PHOTOS[Math.floor(Math.random() * SAMPLE_PHOTOS.length)];
-    onAddPhoto({
-      trayNumber: selectedTray,
-      date: new Date().toISOString().split('T')[0],
-      imageUrl: finalUrl,
-      note: photoNote.trim() || `Tray #${selectedTray} Progress Check`,
-    });
+    // A real uploaded file is sent to the parent for cloud upload; otherwise fall back to a sample image.
+    const finalUrl = selectedFile ? '' : SAMPLE_PHOTOS[Math.floor(Math.random() * SAMPLE_PHOTOS.length)];
+    onAddPhoto(
+      {
+        trayNumber: selectedTray,
+        date: formatLocalDate(new Date()),
+        imageUrl: finalUrl,
+        note: photoNote.trim() || `Tray #${selectedTray} Progress Check`,
+      },
+      selectedFile || undefined
+    );
 
     setShowAddModal(false);
-    setPhotoUrl('');
+    setPreviewUrl('');
+    setSelectedFile(null);
     setPhotoNote('');
   };
 
@@ -154,9 +162,9 @@ export const PhotoDiary: React.FC<PhotoDiaryProps> = ({
                 />
               </div>
 
-              {photoUrl && (
+              {previewUrl && (
                 <div className="relative h-32 rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
-                  <img src={photoUrl} alt="Preview" className="w-full h-full object-cover" />
+                  <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
                 </div>
               )}
 

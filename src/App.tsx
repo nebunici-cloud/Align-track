@@ -18,11 +18,20 @@ import { LoginScreen } from './components/LoginScreen';
 
 import { auth, onAuthStateChanged, User as FirebaseUser } from './lib/firebase';
 import {
-  subscribeToUserData,
-  saveUserDataToCloud,
+  subscribeToProfile,
+  saveProfileToCloud,
+  subscribeToPlanMeta,
+  savePlanMetaToCloud,
+  subscribeToWearLogs,
+  saveWearLogToCloud,
+  deleteWearLogFromCloud,
+  subscribeToPhotos,
+  uploadPhotoFile,
+  savePhotoToCloud,
+  deletePhotoFromCloud,
+  deletePlanFromCloud,
   subscribeToQuotaStatus,
   ActiveTimerState,
-  PerPlanData,
 } from './services/firebaseService';
 
 import {
@@ -55,6 +64,7 @@ import {
   loadTimerState,
   saveTimerState,
   getTodayDateString,
+  fileToDataUrl,
   DEFAULT_SETTINGS,
   INITIAL_MAINTENANCE_TASKS,
   INITIAL_PHOTOS,
@@ -64,12 +74,15 @@ import {
 import { LayoutDashboard, Clock, BarChart3, Camera, Sparkles, CheckCircle2, Zap, Settings, Smile, Loader2 } from 'lucide-react';
 
 export default function App() {
-  // Auth & Cloud Sync State
+  // Auth State
   const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+
+  // True once the current account's cloud plan doc has been read at least once
+  // (or determined not to exist). Gates cloud writes so we never overwrite
+  // cloud data with stale local state before the first snapshot arrives.
   const [isCloudLoaded, setIsCloudLoaded] = useState<boolean>(false);
-  const isCloudHydratedRef = useRef<boolean>(false);
 
   // Accounts State
   const [accounts, setAccounts] = useState<UserProfile[]>(loadAccounts);
@@ -111,162 +124,16 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const currentAccountIdRef = useRef<string>(currentAccountId);
-  useEffect(() => {
-    currentAccountIdRef.current = currentAccountId;
-  }, [currentAccountId]);
+  // Tracks which accountIds have already had their (empty) cloud collections seeded
+  // from local data, so we don't re-seed on every snapshot.
+  const seededLogsRef = useRef<Set<string>>(new Set());
+  const seededPhotosRef = useRef<Set<string>>(new Set());
 
-  const plansMapRef = useRef<Record<string, PerPlanData>>({});
-  const lastCloudHashRef = useRef<string>('');
-
-  // Firebase Auth Lifecycle & Live Cloud Sync Listener
+  // Firebase Auth Lifecycle
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setAuthUser(user);
       setAuthLoading(false);
-
-      if (!user) {
-        isCloudHydratedRef.current = false;
-        setIsCloudLoaded(false);
-        return;
-      }
-
-      // Subscribe to real-time cross-device updates from Firestore
-      const unsubscribeCloud = subscribeToUserData(user.uid, (cloudData, exists) => {
-        if (exists) {
-          lastCloudHashRef.current = JSON.stringify(cloudData);
-
-          if (cloudData.plans) {
-            plansMapRef.current = cloudData.plans;
-          }
-
-          if (cloudData.accounts && Array.isArray(cloudData.accounts) && cloudData.accounts.length > 0) {
-            setAccounts(cloudData.accounts);
-            saveAccounts(cloudData.accounts);
-          }
-
-          if (cloudData.currentAccountId) {
-            setAccountIdState(cloudData.currentAccountId);
-            setCurrentAccountId(cloudData.currentAccountId);
-            currentAccountIdRef.current = cloudData.currentAccountId;
-          }
-
-          const activeAccId = cloudData.currentAccountId || currentAccountIdRef.current;
-          const planObj = cloudData.plans?.[activeAccId];
-
-          if (planObj) {
-            if (planObj.settings) {
-              setSettings(planObj.settings);
-              saveSettings(planObj.settings, activeAccId);
-            }
-            if (planObj.logs) {
-              const currentLocalLogs = loadLogs(activeAccId);
-              const merged = mergeLogs(currentLocalLogs, planObj.logs);
-              setLogs(merged);
-              saveLogs(merged, activeAccId);
-            }
-            if (planObj.tasks) {
-              setTasks(planObj.tasks);
-              saveMaintenanceTasks(planObj.tasks, activeAccId);
-            }
-            if (planObj.photos) {
-              setPhotos(planObj.photos);
-              savePhotos(planObj.photos, activeAccId);
-            }
-            if (planObj.notifications) {
-              setNotifications(planObj.notifications);
-              saveNotifications(planObj.notifications, activeAccId);
-            }
-            if (planObj.activeTimer) {
-              setWearStatus(planObj.activeTimer.wearStatus || 'in');
-              setCurrentOutStartTime(planObj.activeTimer.startTime || null);
-              setCurrentOutReason(planObj.activeTimer.reason || null);
-              setPresetTimerMinutes(planObj.activeTimer.presetTimerMinutes || null);
-              saveTimerState(planObj.activeTimer, activeAccId);
-            }
-          } else {
-            // Fallback for root level legacy structure
-            if (cloudData.settings) {
-              setSettings(cloudData.settings);
-              saveSettings(cloudData.settings, activeAccId);
-            }
-            if (cloudData.logs) {
-              const currentLocalLogs = loadLogs(activeAccId);
-              const merged = mergeLogs(currentLocalLogs, cloudData.logs);
-              setLogs(merged);
-              saveLogs(merged, activeAccId);
-            }
-            if (cloudData.tasks) {
-              setTasks(cloudData.tasks);
-              saveMaintenanceTasks(cloudData.tasks, activeAccId);
-            }
-            if (cloudData.photos) {
-              setPhotos(cloudData.photos);
-              savePhotos(cloudData.photos, activeAccId);
-            }
-            if (cloudData.notifications) {
-              setNotifications(cloudData.notifications);
-              saveNotifications(cloudData.notifications, activeAccId);
-            }
-            if (cloudData.activeTimer) {
-              setWearStatus(cloudData.activeTimer.wearStatus || 'in');
-              setCurrentOutStartTime(cloudData.activeTimer.startTime || null);
-              setCurrentOutReason(cloudData.activeTimer.reason || null);
-              setPresetTimerMinutes(cloudData.activeTimer.presetTimerMinutes || null);
-              saveTimerState(cloudData.activeTimer, activeAccId);
-            }
-          }
-
-          localStorage.setItem('aligner_tracker_has_onboarded_v1', 'true');
-          setIsOnboardingOpen(false);
-          setIsInitialFirstUse(false);
-        } else if (!exists) {
-          // New user record in Firestore: check if device has local onboarding
-          const hasOnboarded = localStorage.getItem('aligner_tracker_has_onboarded_v1');
-          if (!hasOnboarded) {
-            setIsInitialFirstUse(true);
-            setIsOnboardingOpen(true);
-          } else {
-            // Seed cloud with existing local state
-            const currentAccId = currentAccountIdRef.current;
-            const currentTimer = loadTimerState(currentAccId);
-            const initialPlanData: PerPlanData = {
-              settings,
-              logs,
-              tasks,
-              photos,
-              notifications,
-              activeTimer: currentTimer,
-            };
-            plansMapRef.current = { [currentAccId]: initialPlanData };
-
-            const initialPayload = {
-              accounts,
-              currentAccountId: currentAccId,
-              plans: plansMapRef.current,
-              activeTimer: currentTimer,
-              settings,
-              logs,
-              tasks,
-              photos,
-              notifications,
-              profile: currentAccount,
-            };
-
-            lastCloudHashRef.current = JSON.stringify(initialPayload);
-            saveUserDataToCloud(user.uid, initialPayload);
-          }
-        }
-
-        isCloudHydratedRef.current = true;
-        setIsCloudLoaded(true);
-      }, () => {
-        // Error handler (e.g. quota limit exceeded)
-        isCloudHydratedRef.current = true;
-        setIsCloudLoaded(true);
-      });
-
-      return () => unsubscribeCloud();
     });
 
     const unsubscribeQuota = subscribeToQuotaStatus((exceeded) => {
@@ -281,7 +148,129 @@ export default function App() {
     };
   }, []);
 
-  // Save changes to cloud whenever data updates while logged in AND cloud hydration is ready
+  // Reset cloud-loaded gate whenever the signed-in user or active account changes,
+  // so we don't write pre-switch state into the new account's cloud doc.
+  useEffect(() => {
+    setIsCloudLoaded(false);
+  }, [authUser, currentAccountId]);
+
+  // Subscribe to the account/profile list (small doc: /users/{uid}/profile/main)
+  useEffect(() => {
+    if (!authUser) return;
+
+    const unsubscribe = subscribeToProfile(authUser.uid, (profile) => {
+      if (profile) {
+        if (Array.isArray(profile.accounts) && profile.accounts.length > 0) {
+          setAccounts(profile.accounts);
+          saveAccounts(profile.accounts);
+        }
+        if (profile.currentAccountId) {
+          setAccountIdState(profile.currentAccountId);
+          setCurrentAccountId(profile.currentAccountId);
+        }
+        localStorage.setItem('aligner_tracker_has_onboarded_v1', 'true');
+        setIsOnboardingOpen(false);
+        setIsInitialFirstUse(false);
+      } else {
+        const hasOnboarded = localStorage.getItem('aligner_tracker_has_onboarded_v1');
+        if (!hasOnboarded) {
+          setIsInitialFirstUse(true);
+          setIsOnboardingOpen(true);
+        } else {
+          // Existing local user signing in for the first time: seed the cloud profile.
+          saveProfileToCloud(authUser.uid, { accounts, currentAccountId });
+        }
+      }
+    });
+
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser]);
+
+  // Subscribe to the active plan's settings/tasks/notifications/timer (small doc)
+  useEffect(() => {
+    if (!authUser) return;
+
+    const unsubscribe = subscribeToPlanMeta(authUser.uid, currentAccountId, (meta) => {
+      if (meta) {
+        if (meta.settings) {
+          setSettings(meta.settings);
+          saveSettings(meta.settings, currentAccountId);
+        }
+        if (meta.tasks) {
+          setTasks(meta.tasks);
+          saveMaintenanceTasks(meta.tasks, currentAccountId);
+        }
+        if (meta.notifications) {
+          setNotifications(meta.notifications);
+          saveNotifications(meta.notifications, currentAccountId);
+        }
+        if (meta.activeTimer) {
+          setWearStatus(meta.activeTimer.wearStatus || 'in');
+          setCurrentOutStartTime(meta.activeTimer.startTime || null);
+          setCurrentOutReason(meta.activeTimer.reason || null);
+          setPresetTimerMinutes(meta.activeTimer.presetTimerMinutes || null);
+          saveTimerState(meta.activeTimer, currentAccountId);
+        }
+      } else {
+        // No cloud doc yet for this plan: seed it from current local state.
+        const activeTimer: ActiveTimerState = {
+          wearStatus,
+          startTime: currentOutStartTime,
+          reason: currentOutReason,
+          presetTimerMinutes,
+        };
+        savePlanMetaToCloud(authUser.uid, currentAccountId, { settings, tasks, notifications, activeTimer });
+      }
+      setIsCloudLoaded(true);
+    });
+
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser, currentAccountId]);
+
+  // Subscribe to wear logs (unbounded collection, one document per log)
+  useEffect(() => {
+    if (!authUser) return;
+
+    const unsubscribe = subscribeToWearLogs(authUser.uid, currentAccountId, (cloudLogs) => {
+      if (cloudLogs.length === 0 && !seededLogsRef.current.has(currentAccountId)) {
+        seededLogsRef.current.add(currentAccountId);
+        const localLogs = loadLogs(currentAccountId);
+        localLogs.forEach((log) => saveWearLogToCloud(authUser.uid, currentAccountId, log));
+        return;
+      }
+
+      seededLogsRef.current.add(currentAccountId);
+      const merged = mergeLogs(loadLogs(currentAccountId), cloudLogs);
+      setLogs(merged);
+      saveLogs(merged, currentAccountId);
+    });
+
+    return unsubscribe;
+  }, [authUser, currentAccountId]);
+
+  // Subscribe to photos (unbounded collection; images live in Storage, Firestore holds URLs)
+  useEffect(() => {
+    if (!authUser) return;
+
+    const unsubscribe = subscribeToPhotos(authUser.uid, currentAccountId, (cloudPhotos) => {
+      if (cloudPhotos.length === 0 && !seededPhotosRef.current.has(currentAccountId)) {
+        seededPhotosRef.current.add(currentAccountId);
+        const localPhotos = loadPhotos(currentAccountId).filter((p) => p.imageUrl?.startsWith('http'));
+        localPhotos.forEach((photo) => savePhotoToCloud(authUser.uid, currentAccountId, photo));
+        return;
+      }
+
+      seededPhotosRef.current.add(currentAccountId);
+      setPhotos(cloudPhotos);
+      savePhotos(cloudPhotos, currentAccountId);
+    });
+
+    return unsubscribe;
+  }, [authUser, currentAccountId]);
+
+  // Always persist locally for immediate offline resilience
   useEffect(() => {
     const activeTimer: ActiveTimerState = {
       wearStatus,
@@ -289,8 +278,6 @@ export default function App() {
       reason: currentOutReason,
       presetTimerMinutes,
     };
-
-    // Always persist locally for immediate offline resilience
     saveSettings(settings, currentAccountId);
     saveLogs(logs, currentAccountId);
     saveMaintenanceTasks(tasks, currentAccountId);
@@ -298,96 +285,53 @@ export default function App() {
     saveNotifications(notifications, currentAccountId);
     saveAccounts(accounts);
     saveTimerState(activeTimer, currentAccountId);
-
-    if (authUser && isCloudLoaded) {
-      const currentPlanData: PerPlanData = {
-        settings,
-        logs,
-        tasks,
-        photos,
-        notifications,
-        activeTimer,
-      };
-
-      const updatedPlansMap: Record<string, PerPlanData> = {
-        ...(plansMapRef.current || {}),
-        [currentAccountId]: currentPlanData,
-      };
-
-      plansMapRef.current = updatedPlansMap;
-
-      const payload = {
-        accounts,
-        currentAccountId,
-        plans: updatedPlansMap,
-        activeTimer,
-        settings,
-        logs,
-        tasks,
-        photos,
-        notifications,
-        profile: currentAccount,
-      };
-
-      const serialized = JSON.stringify(payload);
-      if (serialized === lastCloudHashRef.current) {
-        return;
-      }
-
-      lastCloudHashRef.current = serialized;
-      saveUserDataToCloud(authUser.uid, payload);
-    }
   }, [
-    authUser,
-    isCloudLoaded,
-    accounts,
     currentAccountId,
     settings,
     logs,
     tasks,
     photos,
     notifications,
+    accounts,
     wearStatus,
     currentOutStartTime,
     currentOutReason,
     presetTimerMinutes,
-    currentAccount,
   ]);
 
-  // Sync state when switching current account
+  // Sync plan meta (settings/tasks/notifications/timer) to cloud on change
+  useEffect(() => {
+    if (!authUser || !isCloudLoaded) return;
+    const activeTimer: ActiveTimerState = {
+      wearStatus,
+      startTime: currentOutStartTime,
+      reason: currentOutReason,
+      presetTimerMinutes,
+    };
+    savePlanMetaToCloud(authUser.uid, currentAccountId, { settings, tasks, notifications, activeTimer });
+  }, [authUser, isCloudLoaded, currentAccountId, settings, tasks, notifications, wearStatus, currentOutStartTime, currentOutReason, presetTimerMinutes]);
+
+  // Sync profile (accounts list + current selection) to cloud on change
+  useEffect(() => {
+    if (!authUser || !isCloudLoaded) return;
+    saveProfileToCloud(authUser.uid, { accounts, currentAccountId });
+  }, [authUser, isCloudLoaded, accounts, currentAccountId]);
+
+  // Switch current account
   const handleSelectAccount = (id: string) => {
     setCurrentAccountId(id);
     setAccountIdState(id);
 
-    const targetPlan = plansMapRef.current[id];
-    if (targetPlan) {
-      if (targetPlan.settings) setSettings(targetPlan.settings);
-      if (targetPlan.logs) {
-        const merged = mergeLogs(loadLogs(id), targetPlan.logs);
-        setLogs(merged);
-        saveLogs(merged, id);
-      }
-      if (targetPlan.tasks) setTasks(targetPlan.tasks);
-      if (targetPlan.photos) setPhotos(targetPlan.photos);
-      if (targetPlan.notifications) setNotifications(targetPlan.notifications);
-      if (targetPlan.activeTimer) {
-        setWearStatus(targetPlan.activeTimer.wearStatus || 'in');
-        setCurrentOutStartTime(targetPlan.activeTimer.startTime || null);
-        setCurrentOutReason(targetPlan.activeTimer.reason || null);
-        setPresetTimerMinutes(targetPlan.activeTimer.presetTimerMinutes || null);
-      }
-    } else {
-      setSettings(loadSettings(id));
-      setLogs(loadLogs(id));
-      setTasks(loadMaintenanceTasks(id));
-      setPhotos(loadPhotos(id));
-      setNotifications(loadNotifications(id));
-      const localTimer = loadTimerState(id);
-      setWearStatus(localTimer.wearStatus);
-      setCurrentOutStartTime(localTimer.startTime);
-      setCurrentOutReason(localTimer.reason);
-      setPresetTimerMinutes(localTimer.presetTimerMinutes);
-    }
+    setSettings(loadSettings(id));
+    setLogs(loadLogs(id));
+    setTasks(loadMaintenanceTasks(id));
+    setPhotos(loadPhotos(id));
+    setNotifications(loadNotifications(id));
+    const localTimer = loadTimerState(id);
+    setWearStatus(localTimer.wearStatus);
+    setCurrentOutStartTime(localTimer.startTime);
+    setCurrentOutReason(localTimer.reason);
+    setPresetTimerMinutes(localTimer.presetTimerMinutes);
 
     const selected = accounts.find((a) => a.id === id);
     if (selected) {
@@ -404,14 +348,7 @@ export default function App() {
     // Save individual plan settings for new account ID
     saveSettings(newSettings, newProfile.id);
 
-    // Switch active account to the new profile
-    setCurrentAccountId(newProfile.id);
-    setAccountIdState(newProfile.id);
-    setSettings(newSettings);
-    setLogs([]);
-    setTasks(INITIAL_MAINTENANCE_TASKS);
-    setPhotos([]);
-    setNotifications([
+    const welcomeNotifications: NotificationLog[] = [
       {
         id: `notif_welcome_${Date.now()}`,
         title: `Welcome to your plan, ${newProfile.name}! 🎉`,
@@ -420,7 +357,26 @@ export default function App() {
         type: 'goal_achieved',
         read: false,
       },
-    ]);
+    ];
+
+    // Switch active account to the new profile
+    setCurrentAccountId(newProfile.id);
+    setAccountIdState(newProfile.id);
+    setSettings(newSettings);
+    setLogs([]);
+    setTasks(INITIAL_MAINTENANCE_TASKS);
+    setPhotos([]);
+    setNotifications(welcomeNotifications);
+
+    if (authUser) {
+      saveProfileToCloud(authUser.uid, { accounts: updatedAccounts, currentAccountId: newProfile.id });
+      savePlanMetaToCloud(authUser.uid, newProfile.id, {
+        settings: newSettings,
+        tasks: INITIAL_MAINTENANCE_TASKS,
+        notifications: welcomeNotifications,
+        activeTimer: { wearStatus: 'in', startTime: null, reason: null, presetTimerMinutes: null },
+      });
+    }
 
     localStorage.setItem('aligner_tracker_has_onboarded_v1', 'true');
     setIsOnboardingOpen(false);
@@ -437,6 +393,10 @@ export default function App() {
     const updated = accounts.filter((a) => a.id !== id);
     setAccounts(updated);
     saveAccounts(updated);
+
+    if (authUser) {
+      deletePlanFromCloud(authUser.uid, id);
+    }
 
     if (currentAccountId === id) {
       const fallbackId = updated[0].id;
@@ -487,6 +447,7 @@ export default function App() {
         const updatedLogs = [newLog, ...logs];
         setLogs(updatedLogs);
         saveLogs(updatedLogs, currentAccountId);
+        if (authUser) saveWearLogToCloud(authUser.uid, currentAccountId, newLog);
 
         showToast(`Aligners back IN! Logged ${durationMins}m out time.`);
       }
@@ -508,6 +469,7 @@ export default function App() {
     const updated = [newLog, ...logs];
     setLogs(updated);
     saveLogs(updated, currentAccountId);
+    if (authUser) saveWearLogToCloud(authUser.uid, currentAccountId, newLog);
     showToast('Manual log entry saved');
   };
 
@@ -516,6 +478,7 @@ export default function App() {
     const updated = logs.map((l) => (l.id === updatedLog.id ? updatedLog : l));
     setLogs(updated);
     saveLogs(updated, currentAccountId);
+    if (authUser) saveWearLogToCloud(authUser.uid, currentAccountId, updatedLog);
     showToast('Log entry updated');
   };
 
@@ -524,6 +487,7 @@ export default function App() {
     const updated = logs.filter((l) => l.id !== id);
     setLogs(updated);
     saveLogs(updated, currentAccountId);
+    if (authUser) deleteWearLogFromCloud(authUser.uid, currentAccountId, id);
     showToast('Log entry removed');
   };
 
@@ -552,15 +516,34 @@ export default function App() {
     showToast('Settings updated');
   };
 
-  // Photos Handler
-  const handleAddPhoto = (photoData: Omit<PhotoEntry, 'id'>) => {
-    const newPhoto: PhotoEntry = {
-      ...photoData,
-      id: `photo_${Date.now()}`,
-    };
+  // Photos Handler: uploads the real file to Storage (when signed in) and stores only the URL.
+  const handleAddPhoto = async (photoData: Omit<PhotoEntry, 'id'>, file?: File) => {
+    const newId = `photo_${Date.now()}`;
+    let imageUrl = photoData.imageUrl;
+
+    if (file) {
+      if (authUser) {
+        try {
+          imageUrl = await uploadPhotoFile(authUser.uid, currentAccountId, newId, file);
+        } catch (err) {
+          console.error('Photo upload to cloud storage failed, keeping it local-only:', err);
+          imageUrl = await fileToDataUrl(file);
+        }
+      } else {
+        // Not signed in: no cloud storage available, keep the photo local-only.
+        imageUrl = await fileToDataUrl(file);
+      }
+    }
+
+    const newPhoto: PhotoEntry = { ...photoData, imageUrl, id: newId };
     const updated = [newPhoto, ...photos];
     setPhotos(updated);
     savePhotos(updated, currentAccountId);
+
+    if (authUser && imageUrl.startsWith('http')) {
+      savePhotoToCloud(authUser.uid, currentAccountId, newPhoto);
+    }
+
     showToast('Smile photo saved to progress diary');
   };
 
@@ -568,6 +551,7 @@ export default function App() {
     const updated = photos.filter((p) => p.id !== id);
     setPhotos(updated);
     savePhotos(updated, currentAccountId);
+    if (authUser) deletePhotoFromCloud(authUser.uid, currentAccountId, id);
     showToast('Photo removed');
   };
 
@@ -600,6 +584,15 @@ export default function App() {
       saveMaintenanceTasks(INITIAL_MAINTENANCE_TASKS, currentAccountId);
       savePhotos(INITIAL_PHOTOS, currentAccountId);
       saveNotifications(INITIAL_NOTIFICATIONS, currentAccountId);
+      if (authUser) {
+        deletePlanFromCloud(authUser.uid, currentAccountId);
+        savePlanMetaToCloud(authUser.uid, currentAccountId, {
+          settings: DEFAULT_SETTINGS,
+          tasks: INITIAL_MAINTENANCE_TASKS,
+          notifications: INITIAL_NOTIFICATIONS,
+          activeTimer: { wearStatus: 'in', startTime: null, reason: null, presetTimerMinutes: null },
+        });
+      }
       setIsSettingsModalOpen(false);
       showToast('Plan data reset for current profile');
     }
@@ -614,6 +607,9 @@ export default function App() {
       const merged = mergeLogs(logs, backupData.logs);
       setLogs(merged);
       saveLogs(merged, currentAccountId);
+      if (authUser) {
+        backupData.logs.forEach((log: WearLog) => saveWearLogToCloud(authUser.uid, currentAccountId, log));
+      }
     }
     showToast('Backup data restored and merged successfully!');
   };
@@ -941,4 +937,3 @@ export default function App() {
     </div>
   );
 }
-

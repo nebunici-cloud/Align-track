@@ -17,7 +17,18 @@ import {
   getDocs,
   onSnapshot,
   query,
+  orderBy,
+  limit,
+  deleteDoc,
 } from 'firebase/firestore';
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+  listAll,
+} from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase
@@ -30,6 +41,7 @@ export const db = firebaseConfig.firestoreDatabaseId
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+export const storage = getStorage(app);
 
 // Connection test helper (optional)
 export async function testFirebaseConnection() {
@@ -64,9 +76,17 @@ export {
   doc,
   getDoc,
   setDoc,
+  deleteDoc,
   collection,
   getDocs,
   onSnapshot,
   query,
+  orderBy,
+  limit,
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+  listAll,
 };
 export type { User };
