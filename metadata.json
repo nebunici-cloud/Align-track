@@ -1,0 +1,6 @@
+{
+  "name": "Aligner Tracker",
+  "description": "Smart orthodontic aligner wear-time logger, tray schedule, maintenance routines, and push notification reminders.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
