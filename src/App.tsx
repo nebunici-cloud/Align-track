@@ -79,6 +79,17 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
 
+  // Guest mode: lets someone use the app locally-only, without a Google account.
+  // Cloud sync stays off (every cloud call below is already gated on authUser),
+  // so this is just a local-storage-backed experience until/unless they sign in.
+  const [isGuestMode, setIsGuestMode] = useState<boolean>(
+    () => localStorage.getItem('aligner_tracker_guest_mode_v1') === 'true'
+  );
+  const handleContinueAsGuest = () => {
+    localStorage.setItem('aligner_tracker_guest_mode_v1', 'true');
+    setIsGuestMode(true);
+  };
+
   // True once the current account's cloud plan doc has been read at least once
   // (or determined not to exist). Gates cloud writes so we never overwrite
   // cloud data with stale local state before the first snapshot arrives.
@@ -630,8 +641,8 @@ export default function App() {
     );
   }
 
-  if (!authUser) {
-    return <LoginScreen onSuccessToast={showToast} />;
+  if (!authUser && !isGuestMode) {
+    return <LoginScreen onSuccessToast={showToast} onContinueAsGuest={handleContinueAsGuest} />;
   }
 
   return (

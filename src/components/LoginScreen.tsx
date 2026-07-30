@@ -15,9 +15,10 @@ import { auth, googleProvider, signInWithPopup } from '../lib/firebase';
 
 interface LoginScreenProps {
   onSuccessToast?: (msg: string) => void;
+  onContinueAsGuest?: () => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast, onContinueAsGuest }) => {
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -132,8 +133,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast }) => {
 
           <p className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
-            <span>Sign in required to access your account & sync treatment logs</span>
+            <span>Sign in to sync your data across devices</span>
           </p>
+
+          {onContinueAsGuest && (
+            <button
+              type="button"
+              onClick={onContinueAsGuest}
+              className="w-full py-2.5 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              Continue without signing in
+            </button>
+          )}
         </div>
       </div>
     </div>
