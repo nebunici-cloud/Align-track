@@ -32,6 +32,12 @@ export interface ActiveTimerState {
   startTime: string | null;
   reason: OutReason | null;
   presetTimerMinutes: number | null;
+  // When this timer state was set locally. Used to resolve the race where the
+  // live listener's first snapshot (reflecting whatever was last saved before
+  // this page loaded) arrives after a fresh local action — without a
+  // timestamp, that stale snapshot would silently overwrite the newer local
+  // change instead of losing to it.
+  updatedAt?: string;
 }
 
 export interface PlanMeta {

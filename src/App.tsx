@@ -153,6 +153,14 @@ export default function App() {
   const isApplyingRemotePlanMetaRef = useRef<boolean>(false);
   const isApplyingRemoteProfileRef = useRef<boolean>(false);
 
+  // Timestamp of the last local wear-status toggle for the current account,
+  // '' if none yet this session. Resolves a separate race: on page load the
+  // app renders instantly from local cache while the live listener's first
+  // snapshot (reflecting whatever was last saved before this page opened) is
+  // still in flight. If the user acts before that snapshot lands, it must
+  // not blindly overwrite their fresher click with stale server data.
+  const activeTimerUpdatedAtRef = useRef<string>('');
+
   // Firebase Auth Lifecycle
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -176,6 +184,7 @@ export default function App() {
   // so we don't write pre-switch state into the new account's cloud doc.
   useEffect(() => {
     setIsCloudLoaded(false);
+    activeTimerUpdatedAtRef.current = '';
   }, [authUser, currentAccountId]);
 
   // Subscribe to the account/profile list (small doc: /users/{uid}/profile/main)
@@ -218,7 +227,35 @@ export default function App() {
 
     const unsubscribe = subscribeToPlanMeta(authUser.uid, currentAccountId, (meta) => {
       if (meta) {
-        isApplyingRemotePlanMetaRef.current = true;
+        let activeTimerConflictsWithNewerLocalEdit = false;
+
+        if (meta.activeTimer) {
+          const localTs = activeTimerUpdatedAtRef.current;
+          const incomingTs = meta.activeTimer.updatedAt || '';
+          const incomingIsStale = localTs !== '' && incomingTs < localTs;
+
+          if (incomingIsStale) {
+            // A local toggle happened more recently than this snapshot reflects
+            // (e.g. the user acted before the first listener snapshot arrived).
+            // Keep local state and let it flow back out on the next sync pass.
+            activeTimerConflictsWithNewerLocalEdit = true;
+          } else {
+            setWearStatus(meta.activeTimer.wearStatus || 'in');
+            setCurrentOutStartTime(meta.activeTimer.startTime || null);
+            setCurrentOutReason(meta.activeTimer.reason || null);
+            setPresetTimerMinutes(meta.activeTimer.presetTimerMinutes || null);
+            saveTimerState(meta.activeTimer, currentAccountId);
+            activeTimerUpdatedAtRef.current = incomingTs || activeTimerUpdatedAtRef.current;
+          }
+        }
+
+        // Only suppress the outgoing sync when nothing here was rejected as
+        // stale — if we kept a fresher local activeTimer, that change still
+        // needs to reach the cloud, so the sync effect must be allowed to run.
+        if (!activeTimerConflictsWithNewerLocalEdit) {
+          isApplyingRemotePlanMetaRef.current = true;
+        }
+
         if (meta.settings) {
           setSettings(meta.settings);
           saveSettings(meta.settings, currentAccountId);
@@ -231,13 +268,6 @@ export default function App() {
           setNotifications(meta.notifications);
           saveNotifications(meta.notifications, currentAccountId);
         }
-        if (meta.activeTimer) {
-          setWearStatus(meta.activeTimer.wearStatus || 'in');
-          setCurrentOutStartTime(meta.activeTimer.startTime || null);
-          setCurrentOutReason(meta.activeTimer.reason || null);
-          setPresetTimerMinutes(meta.activeTimer.presetTimerMinutes || null);
-          saveTimerState(meta.activeTimer, currentAccountId);
-        }
       } else {
         // No cloud doc yet for this plan: seed it from current local state.
         const activeTimer: ActiveTimerState = {
@@ -245,6 +275,7 @@ export default function App() {
           startTime: currentOutStartTime,
           reason: currentOutReason,
           presetTimerMinutes,
+          updatedAt: activeTimerUpdatedAtRef.current || new Date().toISOString(),
         };
         savePlanMetaToCloud(authUser.uid, currentAccountId, { settings, tasks, notifications, activeTimer });
       }
@@ -337,6 +368,7 @@ export default function App() {
       startTime: currentOutStartTime,
       reason: currentOutReason,
       presetTimerMinutes,
+      updatedAt: activeTimerUpdatedAtRef.current || new Date().toISOString(),
     };
     savePlanMetaToCloud(authUser.uid, currentAccountId, { settings, tasks, notifications, activeTimer });
   }, [authUser, isCloudLoaded, currentAccountId, settings, tasks, notifications, wearStatus, currentOutStartTime, currentOutReason, presetTimerMinutes]);
@@ -454,6 +486,8 @@ export default function App() {
 
   // Toggle Wear Status (In <-> Out)
   const handleToggleWearStatus = (newStatus: WearStatus, reason?: OutReason, presetMins?: number) => {
+    activeTimerUpdatedAtRef.current = new Date().toISOString();
+
     if (newStatus === 'out') {
       const nowIso = new Date().toISOString();
       setWearStatus('out');
