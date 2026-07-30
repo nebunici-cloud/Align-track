@@ -140,14 +140,18 @@ export default function App() {
   const seededLogsRef = useRef<Set<string>>(new Set());
   const seededPhotosRef = useRef<Set<string>>(new Set());
 
-  // Last plan-meta/profile payload this client either received from or sent to
-  // Firestore. Without this, applying an incoming snapshot (e.g. from another
-  // device) triggers this same client's own cloud-sync effect, which re-writes
-  // the same data right back — and if a second device does the same thing,
-  // stale echo-writes can race a genuine update and stomp it back. Skipping
-  // writes that match the last known cloud state breaks that feedback loop.
-  const lastPlanMetaHashRef = useRef<string>('');
-  const lastProfileHashRef = useRef<string>('');
+  // Set right before applying an incoming Firestore snapshot to local state.
+  // Without this, applying a remote update triggers this same client's own
+  // cloud-sync effect, which re-writes the same data right back — and with a
+  // second device doing the same thing, stale echo-writes can race a genuine
+  // change and stomp it back to the previous value. The cloud-sync effects
+  // check this flag and skip (consuming it) when the change they're about to
+  // sync was the one that just arrived from the cloud, not a local edit.
+  // (A content-hash comparison was tried here first, but Firestore doesn't
+  // guarantee field order on read, so JSON.stringify comparisons against
+  // locally-constructed objects false-mismatched and never actually skipped.)
+  const isApplyingRemotePlanMetaRef = useRef<boolean>(false);
+  const isApplyingRemoteProfileRef = useRef<boolean>(false);
 
   // Firebase Auth Lifecycle
   useEffect(() => {
@@ -180,6 +184,7 @@ export default function App() {
 
     const unsubscribe = subscribeToProfile(authUser.uid, (profile) => {
       if (profile) {
+        isApplyingRemoteProfileRef.current = true;
         if (Array.isArray(profile.accounts) && profile.accounts.length > 0) {
           setAccounts(profile.accounts);
           saveAccounts(profile.accounts);
@@ -188,10 +193,6 @@ export default function App() {
           setAccountIdState(profile.currentAccountId);
           setCurrentAccountId(profile.currentAccountId);
         }
-        lastProfileHashRef.current = JSON.stringify({
-          accounts: profile.accounts,
-          currentAccountId: profile.currentAccountId,
-        });
         localStorage.setItem('aligner_tracker_has_onboarded_v1', 'true');
         setIsOnboardingOpen(false);
         setIsInitialFirstUse(false);
@@ -202,7 +203,6 @@ export default function App() {
           setIsOnboardingOpen(true);
         } else {
           // Existing local user signing in for the first time: seed the cloud profile.
-          lastProfileHashRef.current = JSON.stringify({ accounts, currentAccountId });
           saveProfileToCloud(authUser.uid, { accounts, currentAccountId });
         }
       }
@@ -218,6 +218,7 @@ export default function App() {
 
     const unsubscribe = subscribeToPlanMeta(authUser.uid, currentAccountId, (meta) => {
       if (meta) {
+        isApplyingRemotePlanMetaRef.current = true;
         if (meta.settings) {
           setSettings(meta.settings);
           saveSettings(meta.settings, currentAccountId);
@@ -237,12 +238,6 @@ export default function App() {
           setPresetTimerMinutes(meta.activeTimer.presetTimerMinutes || null);
           saveTimerState(meta.activeTimer, currentAccountId);
         }
-        lastPlanMetaHashRef.current = JSON.stringify({
-          settings: meta.settings,
-          tasks: meta.tasks,
-          notifications: meta.notifications,
-          activeTimer: meta.activeTimer,
-        });
       } else {
         // No cloud doc yet for this plan: seed it from current local state.
         const activeTimer: ActiveTimerState = {
@@ -251,7 +246,6 @@ export default function App() {
           reason: currentOutReason,
           presetTimerMinutes,
         };
-        lastPlanMetaHashRef.current = JSON.stringify({ settings, tasks, notifications, activeTimer });
         savePlanMetaToCloud(authUser.uid, currentAccountId, { settings, tasks, notifications, activeTimer });
       }
       setIsCloudLoaded(true);
@@ -334,27 +328,27 @@ export default function App() {
   // Sync plan meta (settings/tasks/notifications/timer) to cloud on change
   useEffect(() => {
     if (!authUser || !isCloudLoaded) return;
+    if (isApplyingRemotePlanMetaRef.current) {
+      isApplyingRemotePlanMetaRef.current = false;
+      return;
+    }
     const activeTimer: ActiveTimerState = {
       wearStatus,
       startTime: currentOutStartTime,
       reason: currentOutReason,
       presetTimerMinutes,
     };
-    const payload = { settings, tasks, notifications, activeTimer };
-    const serialized = JSON.stringify(payload);
-    if (serialized === lastPlanMetaHashRef.current) return;
-    lastPlanMetaHashRef.current = serialized;
-    savePlanMetaToCloud(authUser.uid, currentAccountId, payload);
+    savePlanMetaToCloud(authUser.uid, currentAccountId, { settings, tasks, notifications, activeTimer });
   }, [authUser, isCloudLoaded, currentAccountId, settings, tasks, notifications, wearStatus, currentOutStartTime, currentOutReason, presetTimerMinutes]);
 
   // Sync profile (accounts list + current selection) to cloud on change
   useEffect(() => {
     if (!authUser || !isCloudLoaded) return;
-    const payload = { accounts, currentAccountId };
-    const serialized = JSON.stringify(payload);
-    if (serialized === lastProfileHashRef.current) return;
-    lastProfileHashRef.current = serialized;
-    saveProfileToCloud(authUser.uid, payload);
+    if (isApplyingRemoteProfileRef.current) {
+      isApplyingRemoteProfileRef.current = false;
+      return;
+    }
+    saveProfileToCloud(authUser.uid, { accounts, currentAccountId });
   }, [authUser, isCloudLoaded, accounts, currentAccountId]);
 
   // Switch current account
