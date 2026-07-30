@@ -151,6 +151,14 @@ export default function App() {
   // not blindly overwrite their fresher click with stale server data.
   const activeTimerUpdatedAtRef = useRef<string>('');
 
+  // The startTime of the out-session a closing WearLog was last written for.
+  // Without this, calling handleToggleWearStatus('in') more than once for the
+  // same still-open session (a stray double-click, a race between devices,
+  // or the app briefly reverting to 'out' and getting toggled 'in' again)
+  // writes a duplicate log each time, since nothing else remembers that this
+  // particular out-session was already closed out.
+  const lastLoggedOutStartTimeRef = useRef<string | null>(null);
+
   // Firebase Auth Lifecycle
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -481,14 +489,18 @@ export default function App() {
 
     if (newStatus === 'out') {
       const nowIso = new Date().toISOString();
+      lastLoggedOutStartTimeRef.current = null;
       setWearStatus('out');
       setCurrentOutStartTime(nowIso);
       setCurrentOutReason(reason || 'lunch');
       setPresetTimerMinutes(presetMins || null);
       showToast(`Aligners taken OUT for ${reason || 'meal'}`);
     } else {
-      // Put aligners back in: save out session log entry
-      if (currentOutStartTime) {
+      // Put aligners back in: save out session log entry, but only once per
+      // session — if this fires again for the same startTime (double-click,
+      // multi-device, or a UI hiccup), skip re-logging it.
+      if (currentOutStartTime && currentOutStartTime !== lastLoggedOutStartTimeRef.current) {
+        lastLoggedOutStartTimeRef.current = currentOutStartTime;
         const nowMs = Date.now();
         const startMs = new Date(currentOutStartTime).getTime();
         const durationMins = Math.max(1, Math.round((nowMs - startMs) / 60000));
