@@ -59,6 +59,7 @@ import {
   saveMaintenanceTasks,
   loadPhotos,
   savePhotos,
+  mergePhotos,
   loadNotifications,
   saveNotifications,
   loadTimerState,
@@ -78,17 +79,6 @@ export default function App() {
   const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
-
-  // Guest mode: lets someone use the app locally-only, without a Google account.
-  // Cloud sync stays off (every cloud call below is already gated on authUser),
-  // so this is just a local-storage-backed experience until/unless they sign in.
-  const [isGuestMode, setIsGuestMode] = useState<boolean>(
-    () => localStorage.getItem('aligner_tracker_guest_mode_v1') === 'true'
-  );
-  const handleContinueAsGuest = () => {
-    localStorage.setItem('aligner_tracker_guest_mode_v1', 'true');
-    setIsGuestMode(true);
-  };
 
   // True once the current account's cloud plan doc has been read at least once
   // (or determined not to exist). Gates cloud writes so we never overwrite
@@ -320,8 +310,9 @@ export default function App() {
       }
 
       seededPhotosRef.current.add(currentAccountId);
-      setPhotos(cloudPhotos);
-      savePhotos(cloudPhotos, currentAccountId);
+      const merged = mergePhotos(loadPhotos(currentAccountId), cloudPhotos);
+      setPhotos(merged);
+      savePhotos(merged, currentAccountId);
     });
 
     return unsubscribe;
@@ -588,6 +579,7 @@ export default function App() {
   const handleAddPhoto = async (photoData: Omit<PhotoEntry, 'id'>, file?: File) => {
     const newId = `photo_${Date.now()}`;
     let imageUrl = photoData.imageUrl;
+    let cloudUploadFailed = false;
 
     if (file) {
       if (authUser) {
@@ -595,6 +587,7 @@ export default function App() {
           imageUrl = await uploadPhotoFile(authUser.uid, currentAccountId, newId, file);
         } catch (err) {
           console.error('Photo upload to cloud storage failed, keeping it local-only:', err);
+          cloudUploadFailed = true;
           imageUrl = await fileToDataUrl(file);
         }
       } else {
@@ -612,7 +605,11 @@ export default function App() {
       savePhotoToCloud(authUser.uid, currentAccountId, newPhoto);
     }
 
-    showToast('Smile photo saved to progress diary');
+    if (cloudUploadFailed) {
+      showToast('Photo saved on this device only — cloud upload failed, it will not sync to other devices.');
+    } else {
+      showToast('Smile photo saved to progress diary');
+    }
   };
 
   const handleDeletePhoto = (id: string) => {
@@ -698,8 +695,8 @@ export default function App() {
     );
   }
 
-  if (!authUser && !isGuestMode) {
-    return <LoginScreen onSuccessToast={showToast} onContinueAsGuest={handleContinueAsGuest} />;
+  if (!authUser) {
+    return <LoginScreen onSuccessToast={showToast} />;
   }
 
   return (

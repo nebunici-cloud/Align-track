@@ -4,23 +4,24 @@ import {
   Sparkles,
   ShieldCheck,
   Clock,
-  Layers,
-  Calendar,
-  Camera,
+  Cloud,
   Loader2,
   AlertCircle,
-  Cloud,
+  Mail,
+  ArrowLeft,
 } from 'lucide-react';
-import { auth, googleProvider, signInWithPopup } from '../lib/firebase';
+import { auth, googleProvider, signInWithPopup, signInWithEmailAndPassword } from '../lib/firebase';
 
 interface LoginScreenProps {
   onSuccessToast?: (msg: string) => void;
-  onContinueAsGuest?: () => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast, onContinueAsGuest }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast }) => {
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showEmailForm, setShowEmailForm] = useState<boolean>(false);
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -33,6 +34,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast, onCont
     } catch (err: any) {
       console.error('Google Sign-In Error:', err);
       setErrorMsg(err.message || 'Failed to sign in with Google. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const result = await signInWithEmailAndPassword(auth, email.trim(), password);
+      if (onSuccessToast) {
+        onSuccessToast(`Welcome back, ${result.user.email}!`);
+      }
+    } catch (err: any) {
+      console.error('Email Sign-In Error:', err);
+      setErrorMsg('Invalid email or password.');
     } finally {
       setLoading(false);
     }
@@ -98,54 +116,102 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast, onCont
           </div>
         )}
 
-        {/* Sign In CTA Button */}
-        <div className="space-y-3">
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            disabled={loading}
-            className="w-full py-4 px-6 rounded-2xl bg-white hover:bg-slate-100 text-slate-950 font-black text-sm sm:text-base shadow-xl flex items-center justify-center gap-3 transition-all transform active:scale-98 cursor-pointer"
-          >
-            {loading ? (
-              <Loader2 className="w-5 h-5 animate-spin text-slate-700" />
-            ) : (
-              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.15C3.26 21.3 7.31 24 12 24z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.28 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.39l3.99-3.15z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96z"
-                />
-              </svg>
-            )}
-            <span>Sign in with Google</span>
-          </button>
-
-          <p className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
-            <span>Sign in to sync your data across devices</span>
-          </p>
-
-          {onContinueAsGuest && (
+        {!showEmailForm ? (
+          <div className="space-y-3">
             <button
               type="button"
-              onClick={onContinueAsGuest}
-              className="w-full py-2.5 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              className="w-full py-4 px-6 rounded-2xl bg-white hover:bg-slate-100 text-slate-950 font-black text-sm sm:text-base shadow-xl flex items-center justify-center gap-3 transition-all transform active:scale-98 cursor-pointer"
             >
-              Continue without signing in
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin text-slate-700" />
+              ) : (
+                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.15C3.26 21.3 7.31 24 12 24z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.28 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.39l3.99-3.15z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96z"
+                  />
+                </svg>
+              )}
+              <span>Sign in with Google</span>
             </button>
-          )}
-        </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowEmailForm(true);
+                setErrorMsg(null);
+              }}
+              className="w-full py-3 px-6 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-sm flex items-center justify-center gap-2 transition-all"
+            >
+              <Mail className="w-4 h-4 text-teal-400" />
+              <span>Sign in with Email</span>
+            </button>
+
+            <p className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
+              <span>Sign in to sync your data across devices</span>
+            </p>
+          </div>
+        ) : (
+          <form onSubmit={handleEmailSignIn} className="space-y-3">
+            <div>
+              <label className="text-xs text-slate-300 block mb-1 font-medium">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoFocus
+                className="w-full bg-slate-800/80 border border-slate-700 focus:border-teal-400 text-slate-100 rounded-xl px-3.5 py-2.5 text-sm outline-none transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-300 block mb-1 font-medium">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full bg-slate-800/80 border border-slate-700 focus:border-teal-400 text-slate-100 rounded-xl px-3.5 py-2.5 text-sm outline-none transition-colors"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-teal-500 to-cyan-400 hover:from-teal-400 hover:to-cyan-300 text-slate-950 font-black text-sm shadow-xl flex items-center justify-center gap-2 transition-all"
+            >
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>Sign In</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowEmailForm(false);
+                setErrorMsg(null);
+              }}
+              className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to sign-in options</span>
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

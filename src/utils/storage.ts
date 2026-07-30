@@ -311,6 +311,30 @@ export function mergeLogs(localLogs: WearLog[], cloudLogs: WearLog[]): WearLog[]
   });
 }
 
+/**
+ * Merges local and cloud photo lists by id, same as mergeLogs. Without this,
+ * a photo just added optimistically to local state can be wiped out if a
+ * snapshot from just before the upload finished arrives right after it.
+ */
+export function mergePhotos(localPhotos: PhotoEntry[], cloudPhotos: PhotoEntry[]): PhotoEntry[] {
+  const map = new Map<string, PhotoEntry>();
+  if (Array.isArray(cloudPhotos)) {
+    for (const photo of cloudPhotos) {
+      if (photo && photo.id) {
+        map.set(photo.id, photo);
+      }
+    }
+  }
+  if (Array.isArray(localPhotos)) {
+    for (const photo of localPhotos) {
+      if (photo && photo.id) {
+        map.set(photo.id, photo);
+      }
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
 export function loadLogs(accountId?: string): WearLog[] {
   try {
     const key = accountId ? `${LOGS_KEY}_${accountId}` : LOGS_KEY;
