@@ -35,7 +35,7 @@ import {
  * blank optional field (e.g. a manual log's empty notes) can't silently fail
  * the whole write.
  */
-function stripUndefined<T>(value: T): T {
+export function stripUndefined<T>(value: T): T {
   if (Array.isArray(value)) {
     return value.map((item) => stripUndefined(item)) as unknown as T;
   }
