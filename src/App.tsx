@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
-import { WearTimerCard } from './components/WearTimerCard';
 import { TrayProgressCard } from './components/TrayProgressCard';
 import { DailyLogsList } from './components/DailyLogsList';
-import { MaintenanceChecklist } from './components/MaintenanceChecklist';
 import { AnalyticsView } from './components/AnalyticsView';
 import { PhotoDiary } from './components/PhotoDiary';
 import { OrthodontistCard } from './components/OrthodontistCard';
@@ -71,7 +69,7 @@ import {
   INITIAL_NOTIFICATIONS,
 } from './utils/storage';
 
-import { LayoutDashboard, Clock, BarChart3, Camera, Sparkles, CheckCircle2, Zap, Settings, Smile, Loader2 } from 'lucide-react';
+import { Clock, BarChart3, Camera, Sparkles, CheckCircle2, Zap, Settings, Smile, Loader2 } from 'lucide-react';
 
 export default function App() {
   // Auth State
@@ -99,7 +97,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<NotificationLog[]>(() => loadNotifications(currentAccountId));
 
   // Active Tab state
-  const [activeTab, setActiveTab] = useState<'quick' | 'dashboard' | 'logs' | 'analytics' | 'photos'>('quick');
+  const [activeTab, setActiveTab] = useState<'quick' | 'logs' | 'analytics' | 'photos'>('quick');
 
   // Wear Timer State
   const initialTimer = loadTimerState(currentAccountId);
@@ -809,18 +807,6 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
-              activeTab === 'dashboard'
-                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 font-bold shadow-md shadow-teal-500/10'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span>Dashboard</span>
-          </button>
-
-          <button
             onClick={() => setActiveTab('logs')}
             className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
               activeTab === 'logs'
@@ -859,53 +845,30 @@ export default function App() {
 
         {/* TAB CONTENTS */}
         {activeTab === 'quick' && (
-          <QuickTrackView
-            wearStatus={wearStatus}
-            currentOutStartTime={currentOutStartTime}
-            currentOutReason={currentOutReason}
-            todayLogs={todayLogs}
-            settings={settings}
-            tasks={tasks}
-            onToggleStatus={handleToggleWearStatus}
-            onToggleTask={handleToggleTask}
-            onOpenChewiesTimer={() => setIsChewiesModalOpen(true)}
-            onOpenAddManualLog={() => setActiveTab('logs')}
-            onUpdateSettings={handleUpdateSettings}
-          />
-        )}
-
-        {activeTab === 'dashboard' && (
           <div className="space-y-6">
-            {/* Primary Live Timer Widget */}
-            <WearTimerCard
+            <QuickTrackView
               wearStatus={wearStatus}
               currentOutStartTime={currentOutStartTime}
               currentOutReason={currentOutReason}
-              presetTimerMinutes={presetTimerMinutes}
               todayLogs={todayLogs}
-              allLogs={logs}
               settings={settings}
+              tasks={tasks}
               onToggleStatus={handleToggleWearStatus}
-              onAddManualLog={() => setActiveTab('logs')}
+              onToggleTask={handleToggleTask}
+              onOpenChewiesTimer={() => setIsChewiesModalOpen(true)}
+              onOpenAddManualLog={() => setActiveTab('logs')}
+              onUpdateSettings={handleUpdateSettings}
             />
 
-            {/* Grid Layout for Tray Schedule & Hygiene */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="max-w-md mx-auto w-full space-y-6">
               <TrayProgressCard
                 settings={settings}
                 onUpdateSettings={handleUpdateSettings}
                 onOpenPhotoDiary={() => setActiveTab('photos')}
               />
 
-              <MaintenanceChecklist
-                tasks={tasks}
-                onToggleTask={handleToggleTask}
-                onOpenChewiesTimer={() => setIsChewiesModalOpen(true)}
-              />
+              <OrthodontistCard settings={settings} onUpdateSettings={handleUpdateSettings} />
             </div>
-
-            {/* Orthodontist Information */}
-            <OrthodontistCard settings={settings} onUpdateSettings={handleUpdateSettings} />
           </div>
         )}
 
@@ -943,18 +906,6 @@ export default function App() {
         >
           <Zap className="w-5 h-5 fill-amber-400/20 text-amber-400" />
           <span className="text-[10px]">Quick</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('dashboard')}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1 rounded-xl transition-all ${
-            activeTab === 'dashboard'
-              ? 'text-teal-400 font-bold scale-105'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <LayoutDashboard className="w-5 h-5" />
-          <span className="text-[10px]">Dashboard</span>
         </button>
 
         <button
