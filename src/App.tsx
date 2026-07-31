@@ -1004,11 +1004,13 @@ export default function App() {
         isOpen={isAccountSwitcherOpen}
         accounts={accounts}
         currentAccountId={currentAccountId}
+        authUser={authUser}
         onClose={() => setIsAccountSwitcherOpen(false)}
         onSelectAccount={handleSelectAccount}
         onCreateNewPlan={() => setIsOnboardingOpen(true)}
         onDeleteAccount={handleDeleteAccount}
         onUpdateAccountProfile={handleUpdateAccountProfile}
+        onSuccessToast={showToast}
       />
 
       <OnboardingModal

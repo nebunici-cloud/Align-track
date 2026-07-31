@@ -306,6 +306,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
 
+            {/* Current Tray Start Date — drives the "Day N" counter shown in the header */}
+            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2">
+              <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Current Tray Started On</span>
+              </span>
+              <input
+                type="date"
+                value={formData.trayStartDate ? formatLocalDate(new Date(formData.trayStartDate)) : formatLocalDate(new Date())}
+                onChange={(e) =>
+                  setFormData({ ...formData, trayStartDate: new Date(`${e.target.value}T00:00:00`).toISOString() })
+                }
+                className="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg p-2 text-xs focus:ring-1 focus:ring-cyan-400"
+              />
+              <p className="text-[10px] text-slate-400/90 leading-normal">
+                Sets which day of the current tray's schedule you're on (shown as "Day N" in the header). Only
+                changes here if it doesn't match reality — switching trays updates this automatically.
+              </p>
+            </div>
+
             {/* Plan Start Date & Start Time */}
             <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2">
               <span className="text-[11px] font-bold text-teal-300 flex items-center gap-1.5">
