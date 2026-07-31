@@ -790,7 +790,6 @@ export default function App() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenChewiesTimer={() => setIsChewiesModalOpen(true)}
         onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
-        onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
 
       {/* Main Container */}

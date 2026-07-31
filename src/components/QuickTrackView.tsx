@@ -22,7 +22,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { WearStatus, OutReason, WearLog, AlignerSettings, MaintenanceTask, getTrayDuration } from '../types';
-import { getAvailableMinutesForDate, getTodayDateString } from '../utils/storage';
+import { getAvailableMinutesForDate, getTodayDateString, getDayNumberSince } from '../utils/storage';
 
 interface QuickTrackViewProps {
   wearStatus: WearStatus;
@@ -175,7 +175,7 @@ export const QuickTrackView: React.FC<QuickTrackViewProps> = ({
   // Next Tray Change calculation
   const currentDurationDays = getTrayDuration(settings, settings.currentTray);
   const trayStartDateObj = new Date(settings.trayStartDate);
-  const diffDays = Math.max(1, Math.floor((Date.now() - trayStartDateObj.getTime()) / 86400000) + 1);
+  const diffDays = getDayNumberSince(settings.trayStartDate);
   const daysInCurrentTray = Math.min(currentDurationDays, diffDays);
   const daysUntilTrayChange = Math.max(0, currentDurationDays - daysInCurrentTray);
 
@@ -200,10 +200,15 @@ export const QuickTrackView: React.FC<QuickTrackViewProps> = ({
     onToggleStatus('out', selectedReason, settings.outTimerAlertMinutes);
   };
 
-  // Formatted start time string
+  // Formatted start time string: when out, the time this out-session started;
+  // when in, the time aligners were last put back in (the most recent
+  // completed session's end time today, if any).
+  const mostRecentInSince = todayLogs.find((l) => l.endTime)?.endTime;
   const formattedStartTime = currentOutStartTime
     ? new Date(currentOutStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : '13:42';
+    : mostRecentInSince
+    ? new Date(mostRecentInSince).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
 
   // Rubber Bands handlers
   const rubberTarget = settings.rubberBandsTargetPerDay || 3;
@@ -248,7 +253,9 @@ export const QuickTrackView: React.FC<QuickTrackViewProps> = ({
             />
             <span>
               {wearStatus === 'in'
-                ? `Aligners in · since ${formattedStartTime}`
+                ? formattedStartTime
+                  ? `Aligners in · since ${formattedStartTime}`
+                  : 'Aligners in'
                 : `Aligners out · since ${formattedStartTime}`}
             </span>
           </div>

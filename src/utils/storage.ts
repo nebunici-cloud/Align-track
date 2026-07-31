@@ -144,6 +144,25 @@ export function getTodayDateString(): string {
   return formatLocalDate(new Date());
 }
 
+/**
+ * Returns which calendar day of a span a given start date is currently on
+ * (Day 1 = the local calendar day the span started, Day 2 = the next local
+ * calendar day, etc). Counting by calendar day rather than by "hours elapsed
+ * / 24" matters here: a tray started at 9pm is on Day 2 as soon as it's
+ * tomorrow, not only after a full 24 hours have passed — the previous
+ * "floor(msElapsed / 86400000) + 1" approach used across Navbar,
+ * QuickTrackView, and TrayProgressCard could under-count by a day or more
+ * depending on what time of day the span started.
+ */
+export function getDayNumberSince(startDateInput: string): number {
+  const startDateStr = formatLocalDate(new Date(startDateInput));
+  const todayStr = getTodayDateString();
+  const startMidnight = new Date(`${startDateStr}T00:00:00`).getTime();
+  const todayMidnight = new Date(`${todayStr}T00:00:00`).getTime();
+  const daysElapsed = Math.round((todayMidnight - startMidnight) / 86400000);
+  return Math.max(1, daysElapsed + 1);
+}
+
 /** Reads a File into a base64 data URL. Used only as an offline/no-account fallback for photos. */
 export function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

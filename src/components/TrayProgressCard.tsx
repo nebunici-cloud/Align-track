@@ -3,6 +3,7 @@ import { Layers, Calendar, ArrowRight, CheckCircle2, Award, Sparkles, Camera, Sh
 import confetti from 'canvas-confetti';
 import { AlignerSettings, getTrayDuration } from '../types';
 import { playAlertChime, triggerPushNotification } from '../utils/soundAndNotifications';
+import { getDayNumberSince } from '../utils/storage';
 
 interface TrayProgressCardProps {
   settings: AlignerSettings;
@@ -27,9 +28,7 @@ export const TrayProgressCard: React.FC<TrayProgressCardProps> = ({
   const currentDurationDays = getTrayDuration(settings, settings.currentTray);
   const isCustomInterval = settings.customTrayDurations && settings.customTrayDurations[settings.currentTray] !== undefined;
 
-  const startDate = new Date(settings.trayStartDate);
-  const now = new Date();
-  const diffDays = Math.max(1, Math.floor((now.getTime() - startDate.getTime()) / 86400000) + 1);
+  const diffDays = getDayNumberSince(settings.trayStartDate);
   const daysInCurrentTray = Math.min(currentDurationDays, diffDays);
   const daysRemaining = Math.max(0, currentDurationDays - daysInCurrentTray);
 
