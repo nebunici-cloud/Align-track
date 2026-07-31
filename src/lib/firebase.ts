@@ -2,10 +2,14 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
+  EmailAuthProvider,
   signInWithPopup,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  deleteUser,
+  reauthenticateWithPopup,
+  reauthenticateWithCredential,
   User,
 } from 'firebase/auth';
 import {
@@ -75,6 +79,10 @@ export {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  deleteUser,
+  reauthenticateWithPopup,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
   doc,
   getDoc,
   setDoc,

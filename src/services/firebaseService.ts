@@ -373,3 +373,19 @@ export async function deletePlanFromCloud(uid: string, accountId: string): Promi
     // Best-effort: folder may not exist if the plan never had photos.
   }
 }
+
+/**
+ * Wipes every plan (treatment profile) this account has, plus the account's
+ * own profile doc — everything under /users/{uid}. Used for a full account
+ * deletion; the caller is still responsible for deleting the Firebase Auth
+ * user itself afterward.
+ */
+export async function deleteAllPlansFromCloud(uid: string, accountIds: string[]): Promise<void> {
+  if (!uid || isQuotaExceeded) return;
+  await Promise.all(accountIds.map((accountId) => deletePlanFromCloud(uid, accountId)));
+  try {
+    await deleteDoc(profileDocPath(uid));
+  } catch (error) {
+    handleWriteError(error, 'profile deletion');
+  }
+}

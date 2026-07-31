@@ -28,6 +28,7 @@ import {
   savePhotoToCloud,
   deletePhotoFromCloud,
   deletePlanFromCloud,
+  deleteAllPlansFromCloud,
   subscribeToQuotaStatus,
   ActiveTimerState,
 } from './services/firebaseService';
@@ -57,6 +58,7 @@ import {
   saveMaintenanceTasks,
   loadPhotos,
   savePhotos,
+  mergePhotos,
   loadNotifications,
   saveNotifications,
   loadTimerState,
@@ -729,6 +731,18 @@ export default function App() {
     }
   };
 
+  // Wipes every plan's Firestore/Storage data for this account. The caller
+  // (SettingsModal) is responsible for deleting the Firebase Auth user itself
+  // afterward, since that step needs its own re-authentication handling.
+  const handleDeleteAllCloudData = async () => {
+    if (!authUser) return;
+    await deleteAllPlansFromCloud(
+      authUser.uid,
+      accounts.map((a) => a.id)
+    );
+    localStorage.clear();
+  };
+
   const handleImportBackup = (backupData: any) => {
     if (backupData.settings) {
       setSettings(backupData.settings);
@@ -741,6 +755,23 @@ export default function App() {
       if (authUser) {
         backupData.logs.forEach((log: WearLog) => saveWearLogToCloud(authUser.uid, currentAccountId, log));
       }
+    }
+    if (Array.isArray(backupData.tasks) && backupData.tasks.length > 0) {
+      setTasks(backupData.tasks);
+      saveMaintenanceTasks(backupData.tasks, currentAccountId);
+    }
+    if (Array.isArray(backupData.notifications) && backupData.notifications.length > 0) {
+      setNotifications(backupData.notifications);
+      saveNotifications(backupData.notifications, currentAccountId);
+    }
+    if (Array.isArray(backupData.photos) && backupData.photos.length > 0) {
+      // Photo binaries live in Storage, not the backup file - only URL-backed
+      // entries (already-synced photos) can be safely restored; local-only
+      // data-URI photos from another device wouldn't resolve here anyway.
+      const restorablePhotos = backupData.photos.filter((p: PhotoEntry) => p.imageUrl?.startsWith('http'));
+      const merged = mergePhotos(photos, restorablePhotos);
+      setPhotos(merged);
+      savePhotos(merged, currentAccountId);
     }
     showToast('Backup data restored and merged successfully!');
   };
@@ -982,11 +1013,16 @@ export default function App() {
         isOpen={isSettingsModalOpen}
         settings={settings}
         logs={logs}
+        photos={photos}
+        tasks={tasks}
+        notifications={notifications}
+        accounts={accounts}
         authUser={authUser}
         onClose={() => setIsSettingsModalOpen(false)}
         onSave={handleUpdateSettings}
         onResetAll={handleResetAllData}
         onImportBackup={handleImportBackup}
+        onDeleteAllCloudData={handleDeleteAllCloudData}
         onOpenAuthModal={() => {
           setIsSettingsModalOpen(false);
           setIsAuthModalOpen(true);
