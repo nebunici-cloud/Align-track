@@ -59,7 +59,6 @@ import {
   saveMaintenanceTasks,
   loadPhotos,
   savePhotos,
-  mergePhotos,
   loadNotifications,
   saveNotifications,
   loadTimerState,
@@ -158,6 +157,16 @@ export default function App() {
   // writes a duplicate log each time, since nothing else remembers that this
   // particular out-session was already closed out.
   const lastLoggedOutStartTimeRef = useRef<string | null>(null);
+
+  // Logs/photos added locally but not yet confirmed present in a wearLogs/
+  // photos snapshot. The reconciliation below now treats the cloud snapshot
+  // as authoritative (so a genuine deletion on another device actually
+  // disappears here too) except for entries still in these maps, which
+  // covers the brief window between a local add and its write landing.
+  // An entry is dropped from the map the moment a snapshot confirms it, or
+  // immediately on local delete so a fast add-then-delete can't resurrect it.
+  const pendingNewLogsRef = useRef<Map<string, WearLog>>(new Map());
+  const pendingNewPhotosRef = useRef<Map<string, PhotoEntry>>(new Map());
 
   // Firebase Auth Lifecycle
   useEffect(() => {
@@ -297,7 +306,20 @@ export default function App() {
       }
 
       seededLogsRef.current.add(currentAccountId);
-      const merged = mergeLogs(loadLogs(currentAccountId), cloudLogs);
+
+      // Cloud is authoritative (a genuine deletion elsewhere must actually
+      // disappear here). Only entries still pending confirmation survive on
+      // top of it, so a just-added log doesn't flicker away before its own
+      // write lands.
+      const cloudIds = new Set(cloudLogs.map((l) => l.id));
+      for (const id of Array.from(pendingNewLogsRef.current.keys())) {
+        if (cloudIds.has(id)) pendingNewLogsRef.current.delete(id);
+      }
+      const merged = [...cloudLogs, ...Array.from(pendingNewLogsRef.current.values())].sort((a, b) => {
+        const timeA = new Date(a.startTime || a.date).getTime();
+        const timeB = new Date(b.startTime || b.date).getTime();
+        return timeB - timeA;
+      });
       setLogs(merged);
       saveLogs(merged, currentAccountId);
     });
@@ -318,7 +340,14 @@ export default function App() {
       }
 
       seededPhotosRef.current.add(currentAccountId);
-      const merged = mergePhotos(loadPhotos(currentAccountId), cloudPhotos);
+
+      const cloudIds = new Set(cloudPhotos.map((p) => p.id));
+      for (const id of Array.from(pendingNewPhotosRef.current.keys())) {
+        if (cloudIds.has(id)) pendingNewPhotosRef.current.delete(id);
+      }
+      const merged = [...cloudPhotos, ...Array.from(pendingNewPhotosRef.current.values())].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
       setPhotos(merged);
       savePhotos(merged, currentAccountId);
     });
@@ -515,6 +544,7 @@ export default function App() {
           reason: currentOutReason || 'lunch',
         };
 
+        pendingNewLogsRef.current.set(newLog.id, newLog);
         const updatedLogs = [newLog, ...logs];
         setLogs(updatedLogs);
         saveLogs(updatedLogs, currentAccountId);
@@ -541,6 +571,7 @@ export default function App() {
       id: `log_${Date.now()}`,
     };
 
+    pendingNewLogsRef.current.set(newLog.id, newLog);
     const updated = [newLog, ...logs];
     setLogs(updated);
     saveLogs(updated, currentAccountId);
@@ -567,10 +598,15 @@ export default function App() {
 
   // Delete Log Entry
   const handleDeleteLog = (id: string) => {
+    pendingNewLogsRef.current.delete(id);
     const updated = logs.filter((l) => l.id !== id);
     setLogs(updated);
     saveLogs(updated, currentAccountId);
-    if (authUser) deleteWearLogFromCloud(authUser.uid, currentAccountId, id);
+    if (authUser) {
+      deleteWearLogFromCloud(authUser.uid, currentAccountId, id).then((ok) => {
+        if (!ok) showToast('Removed on this device only — the cloud copy failed to delete.');
+      });
+    }
     showToast('Log entry removed');
   };
 
@@ -621,12 +657,15 @@ export default function App() {
     }
 
     const newPhoto: PhotoEntry = { ...photoData, imageUrl, id: newId };
+    pendingNewPhotosRef.current.set(newPhoto.id, newPhoto);
     const updated = [newPhoto, ...photos];
     setPhotos(updated);
     savePhotos(updated, currentAccountId);
 
     if (authUser && imageUrl.startsWith('http')) {
-      savePhotoToCloud(authUser.uid, currentAccountId, newPhoto);
+      savePhotoToCloud(authUser.uid, currentAccountId, newPhoto).then((ok) => {
+        if (!ok) showToast('Photo saved on this device only — its cloud record failed to save.');
+      });
     }
 
     if (cloudUploadFailed) {
@@ -637,10 +676,15 @@ export default function App() {
   };
 
   const handleDeletePhoto = (id: string) => {
+    pendingNewPhotosRef.current.delete(id);
     const updated = photos.filter((p) => p.id !== id);
     setPhotos(updated);
     savePhotos(updated, currentAccountId);
-    if (authUser) deletePhotoFromCloud(authUser.uid, currentAccountId, id);
+    if (authUser) {
+      deletePhotoFromCloud(authUser.uid, currentAccountId, id).then((ok) => {
+        if (!ok) showToast('Removed on this device only — the cloud copy failed to delete.');
+      });
+    }
     showToast('Photo removed');
   };
 

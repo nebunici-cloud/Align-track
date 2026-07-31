@@ -27,6 +27,30 @@ import {
   OutReason,
 } from '../types';
 
+/**
+ * Recursively removes keys whose value is `undefined`. Firestore's setDoc
+ * throws ("Unsupported field value: undefined") if any field is explicitly
+ * undefined, as opposed to simply omitted — a common trap when an optional
+ * field is built as `value || undefined`. Applied to every write below so a
+ * blank optional field (e.g. a manual log's empty notes) can't silently fail
+ * the whole write.
+ */
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item)) as unknown as T;
+  }
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      if (val !== undefined) {
+        out[key] = stripUndefined(val);
+      }
+    }
+    return out as T;
+  }
+  return value;
+}
+
 export interface ActiveTimerState {
   wearStatus: WearStatus;
   startTime: string | null;
@@ -146,7 +170,7 @@ const profileDocPath = (uid: string) => doc(db, 'users', uid, 'profile', 'main')
 
 const debouncedProfileWrite = createDebouncedWriter<ProfileData>(async (uid, data) => {
   if (isQuotaExceeded) return;
-  await setDoc(profileDocPath(uid), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+  await setDoc(profileDocPath(uid), stripUndefined({ ...data, updatedAt: new Date().toISOString() }), { merge: true });
 });
 
 export function saveProfileToCloud(uid: string, data: ProfileData) {
@@ -178,7 +202,7 @@ const planMetaDocPath = (uid: string, accountId: string) =>
 const debouncedPlanMetaWrite = createDebouncedWriter<PlanMeta>(async (key, data) => {
   if (isQuotaExceeded) return;
   const [uid, accountId] = key.split('::');
-  await setDoc(planMetaDocPath(uid, accountId), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+  await setDoc(planMetaDocPath(uid, accountId), stripUndefined({ ...data, updatedAt: new Date().toISOString() }), { merge: true });
 });
 
 export function savePlanMetaToCloud(uid: string, accountId: string, data: PlanMeta) {
@@ -229,7 +253,7 @@ export function subscribeToWearLogs(
 export async function saveWearLogToCloud(uid: string, accountId: string, log: WearLog): Promise<boolean> {
   if (!uid || !accountId || isQuotaExceeded) return false;
   try {
-    await setDoc(doc(wearLogsCollection(uid, accountId), log.id), log, { merge: true });
+    await setDoc(doc(wearLogsCollection(uid, accountId), log.id), stripUndefined(log), { merge: true });
     return true;
   } catch (error) {
     handleWriteError(error, 'wear log');
@@ -237,12 +261,14 @@ export async function saveWearLogToCloud(uid: string, accountId: string, log: We
   }
 }
 
-export async function deleteWearLogFromCloud(uid: string, accountId: string, logId: string): Promise<void> {
-  if (!uid || !accountId || isQuotaExceeded) return;
+export async function deleteWearLogFromCloud(uid: string, accountId: string, logId: string): Promise<boolean> {
+  if (!uid || !accountId || isQuotaExceeded) return false;
   try {
     await deleteDoc(doc(wearLogsCollection(uid, accountId), logId));
+    return true;
   } catch (error) {
     handleWriteError(error, 'wear log deletion');
+    return false;
   }
 }
 
@@ -289,21 +315,25 @@ export async function uploadPhotoFile(
   return getDownloadURL(storageRef);
 }
 
-export async function savePhotoToCloud(uid: string, accountId: string, photo: PhotoEntry): Promise<void> {
-  if (!uid || !accountId || isQuotaExceeded) return;
+export async function savePhotoToCloud(uid: string, accountId: string, photo: PhotoEntry): Promise<boolean> {
+  if (!uid || !accountId || isQuotaExceeded) return false;
   try {
-    await setDoc(doc(photosCollection(uid, accountId), photo.id), photo, { merge: true });
+    await setDoc(doc(photosCollection(uid, accountId), photo.id), stripUndefined(photo), { merge: true });
+    return true;
   } catch (error) {
     handleWriteError(error, 'photo');
+    return false;
   }
 }
 
-export async function deletePhotoFromCloud(uid: string, accountId: string, photoId: string): Promise<void> {
-  if (!uid || !accountId || isQuotaExceeded) return;
+export async function deletePhotoFromCloud(uid: string, accountId: string, photoId: string): Promise<boolean> {
+  if (!uid || !accountId || isQuotaExceeded) return false;
+  let ok = true;
   try {
     await deleteDoc(doc(photosCollection(uid, accountId), photoId));
   } catch (error) {
     handleWriteError(error, 'photo deletion');
+    ok = false;
   }
 
   try {
@@ -311,6 +341,8 @@ export async function deletePhotoFromCloud(uid: string, accountId: string, photo
   } catch {
     // Best-effort: image may not exist in Storage (e.g. legacy base64-only entry).
   }
+
+  return ok;
 }
 
 // ---------- Whole-plan cleanup (used when a treatment profile is deleted) ----------
