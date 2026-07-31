@@ -226,12 +226,14 @@ export function subscribeToWearLogs(
   );
 }
 
-export async function saveWearLogToCloud(uid: string, accountId: string, log: WearLog): Promise<void> {
-  if (!uid || !accountId || isQuotaExceeded) return;
+export async function saveWearLogToCloud(uid: string, accountId: string, log: WearLog): Promise<boolean> {
+  if (!uid || !accountId || isQuotaExceeded) return false;
   try {
     await setDoc(doc(wearLogsCollection(uid, accountId), log.id), log, { merge: true });
+    return true;
   } catch (error) {
     handleWriteError(error, 'wear log');
+    return false;
   }
 }
 

@@ -518,7 +518,11 @@ export default function App() {
         const updatedLogs = [newLog, ...logs];
         setLogs(updatedLogs);
         saveLogs(updatedLogs, currentAccountId);
-        if (authUser) saveWearLogToCloud(authUser.uid, currentAccountId, newLog);
+        if (authUser) {
+          saveWearLogToCloud(authUser.uid, currentAccountId, newLog).then((ok) => {
+            if (!ok) showToast('Saved on this device only — this log failed to sync to the cloud.');
+          });
+        }
 
         showToast(`Aligners back IN! Logged ${durationMins}m out time.`);
       }
@@ -540,7 +544,11 @@ export default function App() {
     const updated = [newLog, ...logs];
     setLogs(updated);
     saveLogs(updated, currentAccountId);
-    if (authUser) saveWearLogToCloud(authUser.uid, currentAccountId, newLog);
+    if (authUser) {
+      saveWearLogToCloud(authUser.uid, currentAccountId, newLog).then((ok) => {
+        if (!ok) showToast('Saved on this device only — this log failed to sync to the cloud.');
+      });
+    }
     showToast('Manual log entry saved');
   };
 
@@ -549,7 +557,11 @@ export default function App() {
     const updated = logs.map((l) => (l.id === updatedLog.id ? updatedLog : l));
     setLogs(updated);
     saveLogs(updated, currentAccountId);
-    if (authUser) saveWearLogToCloud(authUser.uid, currentAccountId, updatedLog);
+    if (authUser) {
+      saveWearLogToCloud(authUser.uid, currentAccountId, updatedLog).then((ok) => {
+        if (!ok) showToast('Saved on this device only — this log update failed to sync to the cloud.');
+      });
+    }
     showToast('Log entry updated');
   };
 
