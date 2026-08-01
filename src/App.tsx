@@ -678,24 +678,38 @@ export default function App() {
     let imageUrl = photoData.imageUrl;
     let cloudUploadFailed = false;
 
+    const describeError = (err: unknown): string => {
+      const anyErr = err as any;
+      return anyErr?.code || anyErr?.message || String(err);
+    };
+
     try {
       let backgroundUpload: Promise<string> | null = null;
+      let immediateUploadError: unknown = null;
 
       if (file) {
         if (authUser) {
           const uploadPromise = uploadPhotoFile(authUser.uid, currentAccountId, newId, file);
+          const timeoutMarker = Symbol('upload-timeout');
           try {
             imageUrl = await Promise.race([
               uploadPromise,
-              new Promise<string>((_, reject) =>
-                setTimeout(() => reject(new Error('Photo upload is taking a while')), 20000)
-              ),
-            ]);
+              new Promise<typeof timeoutMarker>((resolve) => setTimeout(() => resolve(timeoutMarker), 20000)),
+            ]).then((result) => {
+              if (result === timeoutMarker) throw timeoutMarker;
+              return result as string;
+            });
           } catch (err) {
-            console.error('Photo upload is slow or failed, saving locally for now:', err);
             cloudUploadFailed = true;
             imageUrl = await fileToDataUrl(file);
-            backgroundUpload = uploadPromise;
+            if (err === timeoutMarker) {
+              // Just slow, not (yet) failed — keep waiting on the real upload in the background.
+              backgroundUpload = uploadPromise;
+            } else {
+              // The upload itself rejected — a real, immediate failure, not a timeout.
+              console.error('Photo cloud upload failed:', err);
+              immediateUploadError = err;
+            }
           }
         } else {
           // Not signed in: no cloud storage available, keep the photo local-only.
@@ -732,10 +746,13 @@ export default function App() {
           })
           .catch((err) => {
             console.error('Background photo upload ultimately failed:', err);
+            showToast(`Cloud upload ultimately failed (${describeError(err)}) — photo stays on this device only.`);
           });
       }
 
-      if (cloudUploadFailed) {
+      if (immediateUploadError) {
+        showToast(`Photo saved on this device only — cloud upload failed (${describeError(immediateUploadError)}).`);
+      } else if (cloudUploadFailed) {
         showToast('Upload is taking a while — photo saved on this device for now, it will sync once the upload finishes.');
       } else {
         showToast('Smile photo saved to progress diary');
