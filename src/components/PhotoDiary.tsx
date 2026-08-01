@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, Plus, Trash2, Calendar, Sparkles, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Camera, Plus, Trash2, Calendar, Sparkles, Image as ImageIcon, Loader2, Download, X } from 'lucide-react';
 import { PhotoEntry, AlignerSettings } from '../types';
 import { formatLocalDate } from '../utils/storage';
 
@@ -22,6 +22,7 @@ export const PhotoDiary: React.FC<PhotoDiaryProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [photoNote, setPhotoNote] = useState<string>('');
   const [saving, setSaving] = useState<boolean>(false);
+  const [viewingPhoto, setViewingPhoto] = useState<PhotoEntry | null>(null);
 
   const SAMPLE_PHOTOS = [
     'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=600&q=80',
@@ -100,7 +101,8 @@ export const PhotoDiary: React.FC<PhotoDiaryProps> = ({
               <img
                 src={photo.imageUrl}
                 alt={`Tray ${photo.trayNumber}`}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                onClick={() => setViewingPhoto(photo)}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-zoom-in"
                 referrerPolicy="no-referrer"
               />
               <div className="absolute top-2 left-2 bg-slate-900/80 backdrop-blur-md px-2.5 py-1 rounded-full text-[11px] font-bold text-teal-300 border border-slate-700">
@@ -210,6 +212,55 @@ export const PhotoDiary: React.FC<PhotoDiaryProps> = ({
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-Size Photo Viewer */}
+      {viewingPhoto && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setViewingPhoto(null)}
+        >
+          <div
+            className="max-w-2xl w-full space-y-3 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-slate-200 text-sm font-semibold flex items-center gap-2">
+                <Camera className="w-4 h-4 text-teal-400" />
+                Tray #{viewingPhoto.trayNumber} &middot; {viewingPhoto.date}
+              </div>
+              <button
+                onClick={() => setViewingPhoto(null)}
+                className="p-1.5 rounded-full bg-slate-900/80 text-slate-400 hover:text-slate-200 transition-colors"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 max-h-[70vh] flex items-center justify-center">
+              <img
+                src={viewingPhoto.imageUrl}
+                alt={`Tray ${viewingPhoto.trayNumber} full size`}
+                className="max-w-full max-h-[70vh] object-contain"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+
+            {viewingPhoto.note && <p className="text-slate-300 text-xs px-1">{viewingPhoto.note}</p>}
+
+            <a
+              href={viewingPhoto.imageUrl}
+              download={`smile-tray-${viewingPhoto.trayNumber}-${viewingPhoto.date}.jpg`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold shadow-md transition-colors flex items-center justify-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download Photo
+            </a>
           </div>
         </div>
       )}
