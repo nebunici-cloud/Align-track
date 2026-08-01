@@ -374,6 +374,9 @@ export default function App() {
       );
       setPhotos(merged);
       savePhotos(merged, currentAccountId);
+    }, (err) => {
+      console.error('Photo sync subscription failed:', err);
+      showToast(`Photo sync error: ${err?.code || err?.message || 'unknown error'}`);
     });
 
     return unsubscribe;
