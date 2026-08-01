@@ -660,42 +660,50 @@ export default function App() {
   };
 
   // Photos Handler: uploads the real file to Storage (when signed in) and stores only the URL.
+  // The whole body is wrapped in try/catch so any failure - e.g. fileToDataUrl
+  // throwing, not just the upload itself - surfaces as a toast instead of
+  // rejecting silently; PhotoDiary awaits this and shows a saving spinner.
   const handleAddPhoto = async (photoData: Omit<PhotoEntry, 'id'>, file?: File) => {
     const newId = `photo_${Date.now()}`;
     let imageUrl = photoData.imageUrl;
     let cloudUploadFailed = false;
 
-    if (file) {
-      if (authUser) {
-        try {
-          imageUrl = await uploadPhotoFile(authUser.uid, currentAccountId, newId, file);
-        } catch (err) {
-          console.error('Photo upload to cloud storage failed, keeping it local-only:', err);
-          cloudUploadFailed = true;
+    try {
+      if (file) {
+        if (authUser) {
+          try {
+            imageUrl = await uploadPhotoFile(authUser.uid, currentAccountId, newId, file);
+          } catch (err) {
+            console.error('Photo upload to cloud storage failed, keeping it local-only:', err);
+            cloudUploadFailed = true;
+            imageUrl = await fileToDataUrl(file);
+          }
+        } else {
+          // Not signed in: no cloud storage available, keep the photo local-only.
           imageUrl = await fileToDataUrl(file);
         }
-      } else {
-        // Not signed in: no cloud storage available, keep the photo local-only.
-        imageUrl = await fileToDataUrl(file);
       }
-    }
 
-    const newPhoto: PhotoEntry = { ...photoData, imageUrl, id: newId };
-    pendingNewPhotosRef.current.set(newPhoto.id, newPhoto);
-    const updated = [newPhoto, ...photos];
-    setPhotos(updated);
-    savePhotos(updated, currentAccountId);
+      const newPhoto: PhotoEntry = { ...photoData, imageUrl, id: newId };
+      pendingNewPhotosRef.current.set(newPhoto.id, newPhoto);
+      const updated = [newPhoto, ...photos];
+      setPhotos(updated);
+      savePhotos(updated, currentAccountId);
 
-    if (authUser && imageUrl.startsWith('http')) {
-      savePhotoToCloud(authUser.uid, currentAccountId, newPhoto).then((ok) => {
-        if (!ok) showToast('Photo saved on this device only — its cloud record failed to save.');
-      });
-    }
+      if (authUser && imageUrl.startsWith('http')) {
+        savePhotoToCloud(authUser.uid, currentAccountId, newPhoto).then((ok) => {
+          if (!ok) showToast('Photo saved on this device only — its cloud record failed to save.');
+        });
+      }
 
-    if (cloudUploadFailed) {
-      showToast('Photo saved on this device only — cloud upload failed, it will not sync to other devices.');
-    } else {
-      showToast('Smile photo saved to progress diary');
+      if (cloudUploadFailed) {
+        showToast('Photo saved on this device only — cloud upload failed, it will not sync to other devices.');
+      } else {
+        showToast('Smile photo saved to progress diary');
+      }
+    } catch (err) {
+      console.error('Failed to save photo:', err);
+      showToast('Could not save that photo. Please try again.');
     }
   };
 

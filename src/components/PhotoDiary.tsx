@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Camera, Plus, Trash2, Calendar, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { Camera, Plus, Trash2, Calendar, Sparkles, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { PhotoEntry, AlignerSettings } from '../types';
 import { formatLocalDate } from '../utils/storage';
 
 interface PhotoDiaryProps {
   photos: PhotoEntry[];
   settings: AlignerSettings;
-  onAddPhoto: (photo: Omit<PhotoEntry, 'id'>, file?: File) => void;
+  onAddPhoto: (photo: Omit<PhotoEntry, 'id'>, file?: File) => void | Promise<void>;
   onDeletePhoto: (id: string) => void;
 }
 
@@ -21,6 +21,7 @@ export const PhotoDiary: React.FC<PhotoDiaryProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [photoNote, setPhotoNote] = useState<string>('');
+  const [saving, setSaving] = useState<boolean>(false);
 
   const SAMPLE_PHOTOS = [
     'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=600&q=80',
@@ -42,23 +43,29 @@ export const PhotoDiary: React.FC<PhotoDiaryProps> = ({
     }
   };
 
-  const handleSavePhoto = () => {
-    // A real uploaded file is sent to the parent for cloud upload; otherwise fall back to a sample image.
-    const finalUrl = selectedFile ? '' : SAMPLE_PHOTOS[Math.floor(Math.random() * SAMPLE_PHOTOS.length)];
-    onAddPhoto(
-      {
-        trayNumber: selectedTray,
-        date: formatLocalDate(new Date()),
-        imageUrl: finalUrl,
-        note: photoNote.trim() || `Tray #${selectedTray} Progress Check`,
-      },
-      selectedFile || undefined
-    );
+  const handleSavePhoto = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      // A real uploaded file is sent to the parent for cloud upload; otherwise fall back to a sample image.
+      const finalUrl = selectedFile ? '' : SAMPLE_PHOTOS[Math.floor(Math.random() * SAMPLE_PHOTOS.length)];
+      await onAddPhoto(
+        {
+          trayNumber: selectedTray,
+          date: formatLocalDate(new Date()),
+          imageUrl: finalUrl,
+          note: photoNote.trim() || `Tray #${selectedTray} Progress Check`,
+        },
+        selectedFile || undefined
+      );
 
-    setShowAddModal(false);
-    setPreviewUrl('');
-    setSelectedFile(null);
-    setPhotoNote('');
+      setShowAddModal(false);
+      setPreviewUrl('');
+      setSelectedFile(null);
+      setPhotoNote('');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -183,15 +190,24 @@ export const PhotoDiary: React.FC<PhotoDiaryProps> = ({
             <div className="flex items-center gap-3 pt-2">
               <button
                 onClick={() => setShowAddModal(false)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+                disabled={saving}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSavePhoto}
-                className="flex-1 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold shadow-md transition-colors"
+                disabled={saving}
+                className="flex-1 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold shadow-md transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
               >
-                Save Photo Entry
+                {saving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Photo Entry'
+                )}
               </button>
             </div>
           </div>
