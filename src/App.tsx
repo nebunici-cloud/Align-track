@@ -666,20 +666,36 @@ export default function App() {
   // The whole body is wrapped in try/catch so any failure - e.g. fileToDataUrl
   // throwing, not just the upload itself - surfaces as a toast instead of
   // rejecting silently; PhotoDiary awaits this and shows a saving spinner.
+  //
+  // The cloud upload is only raced against a short timeout for *display*
+  // purposes (so a slow connection doesn't leave the save button spinning
+  // forever) - the real upload promise is never abandoned. If it finishes
+  // later, the local-only entry is upgraded in place to the synced cloud
+  // version so it still ends up on other devices instead of being stuck
+  // local-only just because it was slow.
   const handleAddPhoto = async (photoData: Omit<PhotoEntry, 'id'>, file?: File) => {
     const newId = `photo_${Date.now()}`;
     let imageUrl = photoData.imageUrl;
     let cloudUploadFailed = false;
 
     try {
+      let backgroundUpload: Promise<string> | null = null;
+
       if (file) {
         if (authUser) {
+          const uploadPromise = uploadPhotoFile(authUser.uid, currentAccountId, newId, file);
           try {
-            imageUrl = await uploadPhotoFile(authUser.uid, currentAccountId, newId, file);
+            imageUrl = await Promise.race([
+              uploadPromise,
+              new Promise<string>((_, reject) =>
+                setTimeout(() => reject(new Error('Photo upload is taking a while')), 20000)
+              ),
+            ]);
           } catch (err) {
-            console.error('Photo upload to cloud storage failed, keeping it local-only:', err);
+            console.error('Photo upload is slow or failed, saving locally for now:', err);
             cloudUploadFailed = true;
             imageUrl = await fileToDataUrl(file);
+            backgroundUpload = uploadPromise;
           }
         } else {
           // Not signed in: no cloud storage available, keep the photo local-only.
@@ -699,8 +715,28 @@ export default function App() {
         });
       }
 
+      if (backgroundUpload) {
+        backgroundUpload
+          .then((uploadedUrl) => {
+            const syncedPhoto: PhotoEntry = { ...newPhoto, imageUrl: uploadedUrl };
+            pendingNewPhotosRef.current.set(syncedPhoto.id, syncedPhoto);
+            setPhotos((prev) => {
+              const next = prev.map((p) => (p.id === newId ? syncedPhoto : p));
+              savePhotos(next, currentAccountId);
+              return next;
+            });
+            return savePhotoToCloud(authUser!.uid, currentAccountId, syncedPhoto);
+          })
+          .then((ok) => {
+            if (ok) showToast('Smile photo finished uploading and is now synced to your other devices.');
+          })
+          .catch((err) => {
+            console.error('Background photo upload ultimately failed:', err);
+          });
+      }
+
       if (cloudUploadFailed) {
-        showToast('Photo saved on this device only — cloud upload failed, it will not sync to other devices.');
+        showToast('Upload is taking a while — photo saved on this device for now, it will sync once the upload finishes.');
       } else {
         showToast('Smile photo saved to progress diary');
       }

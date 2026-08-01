@@ -304,13 +304,13 @@ export function subscribeToPhotos(
  * Uploads an image file to Firebase Storage and returns its public download URL.
  * Callers should store only the returned URL in Firestore, never the raw file data.
  *
- * The Storage SDK silently retries failed uploads (bad rules, missing bucket,
- * flaky network) for up to 10 minutes before rejecting, which looks to the
- * user like the app is frozen. Race it against a short timeout instead so a
- * broken cloud path fails fast and callers can fall back to a local-only save.
+ * This does not impose its own timeout: the Storage SDK's own upload can
+ * legitimately take a while on a slow connection or a large photo, and racing
+ * it against a short client-side timeout would abandon uploads that were
+ * actually going to succeed, silently downgrading them to local-only saves.
+ * Callers that want a responsive UI should race this themselves for display
+ * purposes while still awaiting the real promise to sync once it resolves.
  */
-const UPLOAD_TIMEOUT_MS = 20000;
-
 export async function uploadPhotoFile(
   uid: string,
   accountId: string,
@@ -318,12 +318,7 @@ export async function uploadPhotoFile(
   file: File
 ): Promise<string> {
   const storageRef = ref(storage, photoStoragePath(uid, accountId, photoId));
-  await Promise.race([
-    uploadBytes(storageRef, file),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Photo upload timed out')), UPLOAD_TIMEOUT_MS)
-    ),
-  ]);
+  await uploadBytes(storageRef, file);
   return getDownloadURL(storageRef);
 }
 
