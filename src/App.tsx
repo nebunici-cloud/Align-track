@@ -1,18 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { Navbar } from './components/Navbar';
 import { TrayProgressCard } from './components/TrayProgressCard';
-import { DailyLogsList } from './components/DailyLogsList';
-import { AnalyticsView } from './components/AnalyticsView';
-import { PhotoDiary } from './components/PhotoDiary';
 import { OrthodontistCard } from './components/OrthodontistCard';
-import { ChewiesTimerModal } from './components/ChewiesTimerModal';
-import { NotificationCenterModal } from './components/NotificationCenterModal';
-import { SettingsModal } from './components/SettingsModal';
-import { OnboardingModal } from './components/OnboardingModal';
-import { AccountSwitcherModal } from './components/AccountSwitcherModal';
 import { QuickTrackView } from './components/QuickTrackView';
-import { AuthModal } from './components/AuthModal';
 import { LoginScreen } from './components/LoginScreen';
+
+// Lazy-loaded: each of these is only ever needed once a specific tab is
+// selected or a specific modal is opened, so there's no reason for their
+// code to be in the initial bundle everyone downloads on first load.
+const DailyLogsList = lazy(() => import('./components/DailyLogsList').then((m) => ({ default: m.DailyLogsList })));
+const AnalyticsView = lazy(() => import('./components/AnalyticsView').then((m) => ({ default: m.AnalyticsView })));
+const PhotoDiary = lazy(() => import('./components/PhotoDiary').then((m) => ({ default: m.PhotoDiary })));
+const ChewiesTimerModal = lazy(() =>
+  import('./components/ChewiesTimerModal').then((m) => ({ default: m.ChewiesTimerModal }))
+);
+const NotificationCenterModal = lazy(() =>
+  import('./components/NotificationCenterModal').then((m) => ({ default: m.NotificationCenterModal }))
+);
+const SettingsModal = lazy(() => import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal })));
+const OnboardingModal = lazy(() => import('./components/OnboardingModal').then((m) => ({ default: m.OnboardingModal })));
+const AccountSwitcherModal = lazy(() =>
+  import('./components/AccountSwitcherModal').then((m) => ({ default: m.AccountSwitcherModal }))
+);
+const AuthModal = lazy(() => import('./components/AuthModal').then((m) => ({ default: m.AuthModal })));
 
 import { auth, onAuthStateChanged, User as FirebaseUser } from './lib/firebase';
 import {
@@ -72,6 +82,14 @@ import {
 } from './utils/storage';
 
 import { Clock, BarChart3, Camera, Sparkles, CheckCircle2, Zap, Settings, Smile, Loader2 } from 'lucide-react';
+
+function TabLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center py-20 text-slate-500">
+      <Loader2 className="w-6 h-6 animate-spin" />
+    </div>
+  );
+}
 
 export default function App() {
   // Auth State
@@ -192,6 +210,12 @@ export default function App() {
   useEffect(() => {
     setIsCloudLoaded(false);
     activeTimerUpdatedAtRef.current = '';
+    // These aren't scoped per account - without clearing them here, a log or
+    // photo added on the previous profile right before switching, but not
+    // yet confirmed by a snapshot, could leak into the newly-selected
+    // profile's next merged view.
+    pendingNewLogsRef.current.clear();
+    pendingNewPhotosRef.current.clear();
   }, [authUser, currentAccountId]);
 
   // Subscribe to the account/profile list (small doc: /users/{uid}/profile/main)
@@ -903,26 +927,28 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'logs' && (
-          <DailyLogsList
-            logs={logs}
-            settings={settings}
-            onAddLog={handleAddLog}
-            onEditLog={handleEditLog}
-            onDeleteLog={handleDeleteLog}
-          />
-        )}
+        <Suspense fallback={<TabLoadingFallback />}>
+          {activeTab === 'logs' && (
+            <DailyLogsList
+              logs={logs}
+              settings={settings}
+              onAddLog={handleAddLog}
+              onEditLog={handleEditLog}
+              onDeleteLog={handleDeleteLog}
+            />
+          )}
 
-        {activeTab === 'analytics' && <AnalyticsView logs={logs} settings={settings} />}
+          {activeTab === 'analytics' && <AnalyticsView logs={logs} settings={settings} />}
 
-        {activeTab === 'photos' && (
-          <PhotoDiary
-            photos={photos}
-            settings={settings}
-            onAddPhoto={handleAddPhoto}
-            onDeletePhoto={handleDeletePhoto}
-          />
-        )}
+          {activeTab === 'photos' && (
+            <PhotoDiary
+              photos={photos}
+              settings={settings}
+              onAddPhoto={handleAddPhoto}
+              onDeletePhoto={handleDeletePhoto}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* Mobile Fixed Bottom Navigation Dock */}
@@ -994,67 +1020,81 @@ export default function App() {
         </div>
       </footer>
 
-      {/* MODALS */}
-      <ChewiesTimerModal
-        isOpen={isChewiesModalOpen}
-        onClose={() => setIsChewiesModalOpen(false)}
-        onCompleteExercise={handleCompleteChewies}
-      />
+      {/* MODALS: each only mounted (and its code fetched) while actually open */}
+      <Suspense fallback={null}>
+        {isChewiesModalOpen && (
+          <ChewiesTimerModal
+            isOpen={isChewiesModalOpen}
+            onClose={() => setIsChewiesModalOpen(false)}
+            onCompleteExercise={handleCompleteChewies}
+          />
+        )}
 
-      <NotificationCenterModal
-        isOpen={isNotifModalOpen}
-        notifications={notifications}
-        onClose={() => setIsNotifModalOpen(false)}
-        onClearAll={handleClearNotifications}
-        onAddNotification={handleAddNotification}
-      />
+        {isNotifModalOpen && (
+          <NotificationCenterModal
+            isOpen={isNotifModalOpen}
+            notifications={notifications}
+            onClose={() => setIsNotifModalOpen(false)}
+            onClearAll={handleClearNotifications}
+            onAddNotification={handleAddNotification}
+          />
+        )}
 
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        settings={settings}
-        logs={logs}
-        photos={photos}
-        tasks={tasks}
-        notifications={notifications}
-        accounts={accounts}
-        authUser={authUser}
-        onClose={() => setIsSettingsModalOpen(false)}
-        onSave={handleUpdateSettings}
-        onResetAll={handleResetAllData}
-        onImportBackup={handleImportBackup}
-        onDeleteAllCloudData={handleDeleteAllCloudData}
-        onOpenAuthModal={() => {
-          setIsSettingsModalOpen(false);
-          setIsAuthModalOpen(true);
-        }}
-      />
+        {isSettingsModalOpen && (
+          <SettingsModal
+            isOpen={isSettingsModalOpen}
+            settings={settings}
+            logs={logs}
+            photos={photos}
+            tasks={tasks}
+            notifications={notifications}
+            accounts={accounts}
+            authUser={authUser}
+            onClose={() => setIsSettingsModalOpen(false)}
+            onSave={handleUpdateSettings}
+            onResetAll={handleResetAllData}
+            onImportBackup={handleImportBackup}
+            onDeleteAllCloudData={handleDeleteAllCloudData}
+            onOpenAuthModal={() => {
+              setIsSettingsModalOpen(false);
+              setIsAuthModalOpen(true);
+            }}
+          />
+        )}
 
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        user={authUser}
-        onClose={() => setIsAuthModalOpen(false)}
-        onSuccessToast={showToast}
-      />
+        {isAuthModalOpen && (
+          <AuthModal
+            isOpen={isAuthModalOpen}
+            user={authUser}
+            onClose={() => setIsAuthModalOpen(false)}
+            onSuccessToast={showToast}
+          />
+        )}
 
-      <AccountSwitcherModal
-        isOpen={isAccountSwitcherOpen}
-        accounts={accounts}
-        currentAccountId={currentAccountId}
-        authUser={authUser}
-        onClose={() => setIsAccountSwitcherOpen(false)}
-        onSelectAccount={handleSelectAccount}
-        onCreateNewPlan={() => setIsOnboardingOpen(true)}
-        onDeleteAccount={handleDeleteAccount}
-        onUpdateAccountProfile={handleUpdateAccountProfile}
-        onSuccessToast={showToast}
-      />
+        {isAccountSwitcherOpen && (
+          <AccountSwitcherModal
+            isOpen={isAccountSwitcherOpen}
+            accounts={accounts}
+            currentAccountId={currentAccountId}
+            authUser={authUser}
+            onClose={() => setIsAccountSwitcherOpen(false)}
+            onSelectAccount={handleSelectAccount}
+            onCreateNewPlan={() => setIsOnboardingOpen(true)}
+            onDeleteAccount={handleDeleteAccount}
+            onUpdateAccountProfile={handleUpdateAccountProfile}
+            onSuccessToast={showToast}
+          />
+        )}
 
-      <OnboardingModal
-        isOpen={isOnboardingOpen}
-        onClose={() => setIsOnboardingOpen(false)}
-        onComplete={handleCompleteOnboarding}
-        isInitialFirstUse={isInitialFirstUse}
-      />
+        {isOnboardingOpen && (
+          <OnboardingModal
+            isOpen={isOnboardingOpen}
+            onClose={() => setIsOnboardingOpen(false)}
+            onComplete={handleCompleteOnboarding}
+            isInitialFirstUse={isInitialFirstUse}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }
