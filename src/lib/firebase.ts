@@ -34,10 +34,24 @@ import {
   deleteObject,
   listAll,
 } from 'firebase/storage';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
+// App Check: only activates once VITE_RECAPTCHA_SITE_KEY is configured (set it
+// as an env var, not committed). Until then this is a deliberate no-op so the
+// app keeps working exactly as before - enabling it requires registering this
+// app under Firebase Console -> App Check with the reCAPTCHA v3 provider,
+// getting the site key from there, and only then flipping Firestore/Storage
+// enforcement on in the console (start in "monitor" mode first).
+if (typeof window !== 'undefined' && import.meta.env.VITE_RECAPTCHA_SITE_KEY) {
+  initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
+    isTokenAutoRefreshEnabled: true,
+  });
+}
 
 // Target provisioned database instance or default
 export const db = firebaseConfig.firestoreDatabaseId
