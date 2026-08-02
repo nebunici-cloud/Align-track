@@ -4,6 +4,9 @@ import { TrayProgressCard } from './components/TrayProgressCard';
 import { OrthodontistCard } from './components/OrthodontistCard';
 import { QuickTrackView } from './components/QuickTrackView';
 import { LoginScreen } from './components/LoginScreen';
+import { HomeView } from './components/home/HomeView';
+import { TrayceBottomNav, TrayceNavDestination } from './components/home/TrayceBottomNav';
+import { useTrayceTheme } from './hooks/useTrayceTheme';
 
 // Lazy-loaded: each of these is only ever needed once a specific tab is
 // selected or a specific modal is opened, so there's no reason for their
@@ -23,6 +26,12 @@ const AccountSwitcherModal = lazy(() =>
   import('./components/AccountSwitcherModal').then((m) => ({ default: m.AccountSwitcherModal }))
 );
 const AuthModal = lazy(() => import('./components/AuthModal').then((m) => ({ default: m.AuthModal })));
+const DailyPlanSheet = lazy(() =>
+  import('./components/home/DailyPlanSheet').then((m) => ({ default: m.DailyPlanSheet }))
+);
+const TreatmentSheet = lazy(() =>
+  import('./components/home/TreatmentSheet').then((m) => ({ default: m.TreatmentSheet }))
+);
 
 import { auth, onAuthStateChanged, User as FirebaseUser } from './lib/firebase';
 import {
@@ -81,7 +90,7 @@ import {
   INITIAL_NOTIFICATIONS,
 } from './utils/storage';
 
-import { Clock, BarChart3, Camera, Sparkles, CheckCircle2, Zap, Settings, Smile, Loader2 } from 'lucide-react';
+import { Clock, BarChart3, Camera, Sparkles, CheckCircle2, Zap, Smile, Loader2 } from 'lucide-react';
 
 function TabLoadingFallback() {
   return (
@@ -118,6 +127,11 @@ export default function App() {
 
   // Active Tab state
   const [activeTab, setActiveTab] = useState<'quick' | 'logs' | 'analytics' | 'photos'>('quick');
+
+  // Redesigned mobile Home screen: theme + its two secondary destinations
+  const [trayceTheme, setTrayceTheme] = useTrayceTheme();
+  const [isDailyPlanOpen, setIsDailyPlanOpen] = useState<boolean>(false);
+  const [isTreatmentSheetOpen, setIsTreatmentSheetOpen] = useState<boolean>(false);
 
   // Wear Timer State
   const initialTimer = loadTimerState(currentAccountId);
@@ -894,20 +908,49 @@ export default function App() {
         </div>
       )}
 
-      {/* Navigation Header */}
-      <Navbar
-        currentTray={settings.currentTray}
-        totalTrays={settings.totalTrays}
-        wearStatus={wearStatus}
-        unreadCount={unreadNotifCount}
-        currentAccount={currentAccount}
-        settings={settings}
-        authUser={authUser}
-        onOpenNotifications={() => setIsNotifModalOpen(true)}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
-        onOpenChewiesTimer={() => setIsChewiesModalOpen(true)}
-        onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
-      />
+      {/* Navigation Header — hidden on mobile while the redesigned Home
+          screen (which has its own compact header) is active */}
+      <div className={activeTab === 'quick' ? 'hidden sm:block' : ''}>
+        <Navbar
+          currentTray={settings.currentTray}
+          totalTrays={settings.totalTrays}
+          wearStatus={wearStatus}
+          unreadCount={unreadNotifCount}
+          currentAccount={currentAccount}
+          settings={settings}
+          authUser={authUser}
+          onOpenNotifications={() => setIsNotifModalOpen(true)}
+          onOpenSettings={() => setIsSettingsModalOpen(true)}
+          onOpenChewiesTimer={() => setIsChewiesModalOpen(true)}
+          onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
+        />
+      </div>
+
+      {/* Redesigned mobile Home screen — manages its own header, background
+          and safe-area padding, so it renders outside <main>'s padded
+          container rather than nested inside it. Desktop keeps the
+          classic dashboard (below) unchanged. */}
+      {activeTab === 'quick' && (
+        <div className="sm:hidden">
+          <HomeView
+            firstName={currentAccount?.name?.split(' ')[0] || 'there'}
+            avatarUrl={authUser?.photoURL}
+            theme={trayceTheme}
+            onThemeChange={setTrayceTheme}
+            wearStatus={wearStatus}
+            currentOutStartTime={currentOutStartTime}
+            currentOutReason={currentOutReason}
+            todayLogs={todayLogs}
+            settings={settings}
+            tasks={tasks}
+            onToggleStatus={handleToggleWearStatus}
+            onOpenProfile={() => setIsSettingsModalOpen(true)}
+            onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
+            onOpenDailyPlan={() => setIsDailyPlanOpen(true)}
+            onOpenTreatment={() => setIsTreatmentSheetOpen(true)}
+          />
+        </div>
+      )}
 
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6 pb-28 sm:pb-12 space-y-6">
@@ -964,7 +1007,7 @@ export default function App() {
 
         {/* TAB CONTENTS */}
         {activeTab === 'quick' && (
-          <div className="space-y-6">
+          <div className="hidden sm:block space-y-6">
             <QuickTrackView
               wearStatus={wearStatus}
               currentOutStartTime={currentOutStartTime}
@@ -1016,63 +1059,15 @@ export default function App() {
       </main>
 
       {/* Mobile Fixed Bottom Navigation Dock */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 border-t border-slate-800/90 backdrop-blur-xl px-2 py-2.5 flex items-center justify-around shadow-2xl">
-        <button
-          onClick={() => setActiveTab('quick')}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1 rounded-xl transition-all ${
-            activeTab === 'quick'
-              ? 'text-amber-300 font-bold scale-105'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Zap className="w-5 h-5 fill-amber-400/20 text-amber-400" />
-          <span className="text-[10px]">Quick</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('logs')}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1 rounded-xl transition-all ${
-            activeTab === 'logs'
-              ? 'text-teal-400 font-bold scale-105'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Clock className="w-5 h-5" />
-          <span className="text-[10px]">Logs</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('analytics')}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1 rounded-xl transition-all ${
-            activeTab === 'analytics'
-              ? 'text-teal-400 font-bold scale-105'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <BarChart3 className="w-5 h-5" />
-          <span className="text-[10px]">Stats</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('photos')}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1 rounded-xl transition-all ${
-            activeTab === 'photos'
-              ? 'text-teal-400 font-bold scale-105'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Camera className="w-5 h-5" />
-          <span className="text-[10px]">Diary</span>
-        </button>
-
-        <button
-          onClick={() => setIsSettingsModalOpen(true)}
-          className="flex flex-col items-center gap-1 px-2.5 py-1 rounded-xl transition-all text-slate-400 hover:text-slate-200"
-        >
-          <Settings className="w-5 h-5" />
-          <span className="text-[10px]">Settings</span>
-        </button>
-      </nav>
+      <div className="sm:hidden">
+        <TrayceBottomNav
+          theme={trayceTheme}
+          active={activeTab === 'quick' ? 'home' : activeTab}
+          onNavigate={(destination: TrayceNavDestination) =>
+            setActiveTab(destination === 'home' ? 'quick' : destination)
+          }
+        />
+      </div>
 
       {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950 py-6 text-center text-xs text-slate-500">
@@ -1091,6 +1086,33 @@ export default function App() {
             isOpen={isChewiesModalOpen}
             onClose={() => setIsChewiesModalOpen(false)}
             onCompleteExercise={handleCompleteChewies}
+          />
+        )}
+
+        {isDailyPlanOpen && (
+          <DailyPlanSheet
+            theme={trayceTheme}
+            tasks={tasks}
+            settings={settings}
+            onToggleTask={handleToggleTask}
+            onOpenChewiesTimer={() => {
+              setIsDailyPlanOpen(false);
+              setIsChewiesModalOpen(true);
+            }}
+            onUpdateSettings={handleUpdateSettings}
+            onClose={() => setIsDailyPlanOpen(false)}
+          />
+        )}
+
+        {isTreatmentSheetOpen && (
+          <TreatmentSheet
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            onOpenPhotoDiary={() => {
+              setIsTreatmentSheetOpen(false);
+              setActiveTab('photos');
+            }}
+            onClose={() => setIsTreatmentSheetOpen(false)}
           />
         )}
 
