@@ -915,6 +915,7 @@ export default function App() {
           currentTray={settings.currentTray}
           totalTrays={settings.totalTrays}
           wearStatus={wearStatus}
+          currentOutStartTime={currentOutStartTime}
           unreadCount={unreadNotifCount}
           currentAccount={currentAccount}
           settings={settings}

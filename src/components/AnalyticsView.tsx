@@ -161,30 +161,33 @@ Patient is tracking wear time consistently and adhering to tray schedule. Next a
         </div>
 
         <div className="bg-slate-800/40 border border-slate-800 rounded-xl p-4">
-          <div className="h-48 flex items-end justify-between gap-2 pt-6 pb-1 relative">
-            {/* Goal Line indicator */}
-            <div
-              className="absolute left-0 right-0 border-t border-dashed border-teal-500/50 z-10 pointer-events-none flex items-center justify-end pr-1"
-              style={{ bottom: `calc(${(settings.dailyTargetHours / 24) * 100}% + 20px)` }}
-            >
-              <span className="text-[10px] font-semibold text-teal-300 bg-slate-900/90 px-1.5 py-0.5 rounded border border-teal-500/30">
-                {settings.dailyTargetHours}h Goal
-              </span>
-            </div>
-
+          <div className="flex items-end justify-between gap-2">
             {past7DaysData.map((d, idx) => {
               const barHeightPercent = d.isBeforeStart ? 0 : Math.min(100, (d.wearHours / 24) * 100);
+              const goalLinePercent = Math.min(100, (settings.dailyTargetHours / 24) * 100);
               return (
-                <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end relative z-20">
+                <div key={idx} className="flex-1 flex flex-col items-center gap-1.5">
                   <span className={`text-[11px] font-bold ${d.isBeforeStart ? 'text-slate-600 font-normal' : 'text-slate-200'}`}>
                     {d.isBeforeStart ? '-' : `${d.wearHours}h`}
                   </span>
-                  <div className="w-full bg-slate-800/60 rounded-t-lg h-full max-h-36 flex items-end overflow-hidden p-0.5 border border-slate-700/30">
+                  {/* Fixed-height track (h-36 = 144px) so the bar fill and the
+                      goal line below both use the exact same 0-24h scale and
+                      the same reference box — every column's goal line then
+                      lands at an identical pixel offset, forming one
+                      continuous line across the chart instead of a badge
+                      floating at an unrelated height. */}
+                  <div className="relative w-full h-36 bg-slate-800/60 rounded-t-lg overflow-hidden border border-slate-700/30">
+                    {!d.isBeforeStart && (
+                      <div
+                        className="absolute left-0 right-0 border-t border-dashed border-teal-400/70 z-10 pointer-events-none"
+                        style={{ bottom: `${goalLinePercent}%` }}
+                      />
+                    )}
                     {d.isBeforeStart ? (
-                      <div className="w-full h-1 bg-slate-700/40 rounded-t" title="Before treatment plan start" />
+                      <div className="absolute bottom-0.5 left-0.5 right-0.5 h-1 bg-slate-700/40 rounded-t" title="Before treatment plan start" />
                     ) : (
                       <div
-                        className={`w-full rounded-t-md transition-all duration-500 ${
+                        className={`absolute bottom-0 left-0 right-0 rounded-t-md transition-all duration-500 ${
                           d.goalMet
                             ? 'bg-gradient-to-t from-teal-500 to-emerald-400'
                             : 'bg-gradient-to-t from-amber-600 to-amber-400'

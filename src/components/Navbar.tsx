@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Smile, Bell, Settings, User, ChevronDown, Calendar } from 'lucide-react';
 import { WearStatus, UserProfile, AlignerSettings, getTrayDuration } from '../types';
 import { User as FirebaseUser } from '../lib/firebase';
@@ -8,6 +8,7 @@ interface NavbarProps {
   currentTray: number;
   totalTrays: number;
   wearStatus: WearStatus;
+  currentOutStartTime?: string | null;
   unreadCount: number;
   currentAccount?: UserProfile;
   settings?: AlignerSettings;
@@ -18,10 +19,20 @@ interface NavbarProps {
   onOpenAccountSwitcher: () => void;
 }
 
+function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
 export const Navbar: React.FC<NavbarProps> = ({
   currentTray,
   totalTrays,
   wearStatus,
+  currentOutStartTime,
   unreadCount,
   currentAccount,
   settings,
@@ -34,6 +45,21 @@ export const Navbar: React.FC<NavbarProps> = ({
   const diffDays = settings?.trayStartDate ? getDayNumberSince(settings.trayStartDate) : 1;
   const durationDays = settings ? getTrayDuration(settings, currentTray) : 7;
   const currentDay = Math.min(durationDays, diffDays);
+
+  const [elapsedOutSeconds, setElapsedOutSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    if (wearStatus !== 'out' || !currentOutStartTime) {
+      setElapsedOutSeconds(0);
+      return;
+    }
+    const tick = () => {
+      setElapsedOutSeconds(Math.max(0, Math.floor((Date.now() - new Date(currentOutStartTime).getTime()) / 1000)));
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [wearStatus, currentOutStartTime]);
 
   return (
     <header className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 text-white transition-colors duration-200">
@@ -104,7 +130,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     wearStatus === 'in' ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : 'bg-amber-400 animate-pulse shadow-[0_0_6px_#fbbf24]'
                   }`}
                 />
-                {wearStatus === 'in' ? 'In' : 'Out'}
+                {wearStatus === 'in' ? 'In' : `Out ${formatElapsed(elapsedOutSeconds)}`}
               </span>
             </button>
           )}
