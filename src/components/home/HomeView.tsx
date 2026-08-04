@@ -35,6 +35,14 @@ function formatDuration(minutes: number): string {
   return `${m}m`;
 }
 
+function formatStopwatch(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  return `${m}m ${s}s`;
+}
+
 export const HomeView: React.FC<HomeViewProps> = ({
   firstName,
   avatarUrl,
@@ -54,6 +62,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 }) => {
   const [showReasonSheet, setShowReasonSheet] = useState(false);
   const [, forceTick] = useState(0);
+  const [elapsedOutSeconds, setElapsedOutSeconds] = useState(0);
 
   // Keep elapsed-time-derived values (available minutes today, live out
   // duration) fresh without waiting for unrelated prop changes.
@@ -61,6 +70,20 @@ export const HomeView: React.FC<HomeViewProps> = ({
     const interval = setInterval(() => forceTick((n) => n + 1), 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // Live current-out-session stopwatch, ticking every second while out.
+  useEffect(() => {
+    if (wearStatus !== 'out' || !currentOutStartTime) {
+      setElapsedOutSeconds(0);
+      return;
+    }
+    const tick = () => {
+      setElapsedOutSeconds(Math.max(0, Math.floor((Date.now() - new Date(currentOutStartTime).getTime()) / 1000)));
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [wearStatus, currentOutStartTime]);
 
   const todayStr = getTodayDateString();
   const { availableMins: trackedWindowMinutes } = getAvailableMinutesForDate(todayStr, settings);
@@ -230,9 +253,27 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </button>
           </div>
 
-          <p className="text-xs" style={{ color: 'var(--tz-text-secondary)' }}>
-            {paceMessage}
-          </p>
+          {wearStatus === 'out' ? (
+            <div
+              className="flex items-center justify-between rounded-xl px-3 py-2"
+              style={{ backgroundColor: 'var(--tz-bg-canvas)', border: '1px solid var(--tz-border-subtle)' }}
+            >
+              <span className="text-xs font-medium" style={{ color: 'var(--tz-text-secondary)' }}>
+                Out for
+              </span>
+              <span
+                className="text-sm font-bold tabular-nums"
+                style={{ color: 'var(--tz-accent-sand)' }}
+                aria-live="polite"
+              >
+                {formatStopwatch(elapsedOutSeconds)}
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs" style={{ color: 'var(--tz-text-secondary)' }}>
+              {paceMessage}
+            </p>
+          )}
         </div>
 
         <TodaysRhythm
