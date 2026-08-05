@@ -20,6 +20,8 @@ import {
   Loader2,
   ShieldAlert,
   Send,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { AlignerSettings, WearLog, PhotoEntry, MaintenanceTask, NotificationLog, UserProfile } from '../types';
 import {
@@ -85,6 +87,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Telegram bot linking state
   const [telegramCode, setTelegramCode] = useState<string | null>(null);
   const [generatingTelegramCode, setGeneratingTelegramCode] = useState<boolean>(false);
+  const [telegramCodeCopied, setTelegramCodeCopied] = useState<boolean>(false);
 
   // Danger zone: account deletion state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
@@ -107,6 +110,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         createdAt: new Date().toISOString(),
       });
       setTelegramCode(code);
+      setTelegramCodeCopied(false);
       setTimeout(() => setTelegramCode((c) => (c === code ? null : c)), 15 * 60 * 1000);
     } catch (err) {
       console.error('Failed to generate Telegram linking code:', err);
@@ -324,7 +328,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   Open the bot and send <span className="font-mono text-sky-300">/link {telegramCode}</span> (expires
                   in 15 minutes)
                 </p>
-                <p className="font-mono text-lg font-bold text-sky-300 tracking-widest">{telegramCode}</p>
+
+                <div className="flex items-center justify-center gap-2">
+                  <p className="font-mono text-lg font-bold text-sky-300 tracking-widest">{telegramCode}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`/link ${telegramCode}`);
+                      setTelegramCodeCopied(true);
+                      setTimeout(() => setTelegramCodeCopied(false), 2000);
+                    }}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/70 transition-colors"
+                    title="Copy /link command"
+                  >
+                    {telegramCodeCopied ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+
                 {import.meta.env.VITE_TELEGRAM_BOT_USERNAME && (
                   <a
                     href={`https://t.me/${import.meta.env.VITE_TELEGRAM_BOT_USERNAME}?start=${telegramCode}`}
