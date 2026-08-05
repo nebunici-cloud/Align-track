@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { Firestore } from 'firebase-admin/firestore';
-import { getAdminDb } from './_lib/firebaseAdmin';
+import { getAdminDb } from './_lib/firebaseAdmin.js';
 import type { OutReason, WearLog } from '../src/types';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
