@@ -88,6 +88,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [telegramCode, setTelegramCode] = useState<string | null>(null);
   const [generatingTelegramCode, setGeneratingTelegramCode] = useState<boolean>(false);
   const [telegramCodeCopied, setTelegramCodeCopied] = useState<boolean>(false);
+  const [telegramError, setTelegramError] = useState<string | null>(null);
 
   // Danger zone: account deletion state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
@@ -102,6 +103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleGenerateTelegramCode = async () => {
     if (!authUser || !currentAccountId || generatingTelegramCode) return;
     setGeneratingTelegramCode(true);
+    setTelegramError(null);
     try {
       const code = Math.random().toString(36).slice(2, 8).toUpperCase();
       await setDoc(doc(db, 'telegramLinkCodes', code), {
@@ -112,8 +114,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setTelegramCode(code);
       setTelegramCodeCopied(false);
       setTimeout(() => setTelegramCode((c) => (c === code ? null : c)), 15 * 60 * 1000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to generate Telegram linking code:', err);
+      setTelegramError(
+        err?.code === 'permission-denied'
+          ? 'Permission denied — the Firestore rules for this feature may not be deployed yet.'
+          : `Failed to generate code: ${err?.message || 'unknown error'}`
+      );
     } finally {
       setGeneratingTelegramCode(false);
     }
@@ -375,6 +382,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
                 <span>Generate Linking Code</span>
               </button>
+            )}
+
+            {telegramError && (
+              <p className="text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2.5 py-1.5">
+                ⚠️ {telegramError}
+              </p>
             )}
           </div>
         )}
