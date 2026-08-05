@@ -15,12 +15,23 @@ interface ActiveTimerState {
 }
 
 async function sendMessage(chatId: number, text: string): Promise<void> {
-  if (!BOT_TOKEN) return;
-  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-  }).catch((err) => console.error('Telegram sendMessage failed:', err));
+  if (!BOT_TOKEN) {
+    console.error('TELEGRAM_BOT_TOKEN is not set — cannot send a reply');
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error(`Telegram sendMessage rejected: ${res.status} ${body}`);
+    }
+  } catch (err) {
+    console.error('Telegram sendMessage threw:', err);
+  }
 }
 
 const REASON_KEYWORDS: Record<OutReason, string[]> = {
