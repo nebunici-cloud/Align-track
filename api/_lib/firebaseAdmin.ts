@@ -1,6 +1,13 @@
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+
+// Same value as firestoreDatabaseId in firebase-applet-config.json (not a
+// secret - it's already public in the client bundle). Hardcoded here rather
+// than imported from the JSON file because Vercel runs this function as
+// native Node ESM (package.json has "type": "module"), which requires a
+// `with { type: 'json' }` import attribute Vite's bundler doesn't need -
+// simpler to avoid the JSON import in server code entirely.
+const FIRESTORE_DATABASE_ID = 'ai-studio-alignertracker-77243989-1beb-41f6-bd6a-d997ca882125';
 
 /**
  * Server-side Firebase Admin SDK, used only by API routes (never bundled
@@ -27,5 +34,5 @@ function getAdminApp() {
 // client SDK in src/lib/firebase.ts — must match or writes silently land in
 // an empty, unrelated database that the app never reads from.
 export function getAdminDb() {
-  return getFirestore(getAdminApp(), firebaseConfig.firestoreDatabaseId);
+  return getFirestore(getAdminApp(), FIRESTORE_DATABASE_ID);
 }
