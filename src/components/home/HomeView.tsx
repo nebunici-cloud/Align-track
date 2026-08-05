@@ -8,6 +8,7 @@ import { WearProgressRing } from './WearProgressRing';
 import { TodaysRhythm, RhythmSegmentState } from './TodaysRhythm';
 import { NextUpCard } from './NextUpCard';
 import { TreatmentShortcut } from './TreatmentShortcut';
+import { TodaysPlanCard } from './TodaysPlanCard';
 import { OutReasonSheet } from './OutReasonSheet';
 
 interface HomeViewProps {
@@ -172,131 +173,174 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   const completionPercent = Math.round((settings.currentTray / settings.totalTrays) * 100);
 
-  return (
-    <div className={`tz-scope tz-${theme} min-h-screen`} style={{ backgroundColor: 'var(--tz-bg-canvas)' }}>
-      <div className="max-w-[430px] mx-auto w-full px-5 pt-5 pb-24 space-y-3">
-        <TrayceHeader theme={theme} onThemeChange={onThemeChange} avatarUrl={avatarUrl} onOpenProfile={onOpenProfile} />
+  // Shared between the mobile and desktop trees below (both are always in
+  // the DOM, toggled with responsive classes, so this is called once per
+  // tree rather than reusing a single JSX reference across both).
+  const renderHeroCard = () => (
+    <div
+      className="rounded-[24px] p-4 space-y-3"
+      style={{ backgroundColor: 'var(--tz-surface-card)', border: '1px solid var(--tz-border-subtle)' }}
+    >
+      <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--tz-text-secondary)' }}>
+        Today&rsquo;s wear
+      </p>
 
-        <div>
-          <button
-            type="button"
-            onClick={onOpenAccountSwitcher}
-            className="text-2xl font-bold text-left"
-            style={{ color: 'var(--tz-text-primary)' }}
-            title="Tap to switch patient profile"
-          >
-            {greeting}, {firstName}
-          </button>
-          <div className="flex flex-wrap items-center gap-2 mt-2.5">
-            <span
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium"
-              style={{ backgroundColor: 'var(--tz-surface-card)', border: '1px solid var(--tz-border-subtle)', color: 'var(--tz-text-primary)' }}
-            >
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--tz-brand-teal)' }} />
-              Tray {settings.currentTray} &middot; Day {trayDayNumber}
-            </span>
-            <span
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium"
-              style={{
-                backgroundColor: 'var(--tz-surface-card)',
-                border: '1px solid var(--tz-border-subtle)',
-                color: wearStatus === 'in' ? 'var(--tz-brand-teal)' : 'var(--tz-accent-sand)',
-              }}
-            >
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: wearStatus === 'in' ? 'var(--tz-brand-teal)' : 'var(--tz-accent-sand)' }}
-              />
-              {stateSinceLabel
-                ? `${wearStatus === 'in' ? 'In' : 'Out'} since ${stateSinceLabel}`
-                : wearStatus === 'in'
-                ? 'Aligners in'
-                : 'Aligners out'}
-            </span>
-          </div>
-        </div>
+      <div className="flex items-center gap-4">
+        <WearProgressRing
+          wornSeconds={wornSeconds}
+          goalSeconds={goalSeconds}
+          hoursLabel={`${wearHours}h`}
+          minutesLabel={`${wearMins}m`}
+        />
 
-        <div
-          className="rounded-[24px] p-4 space-y-3"
-          style={{ backgroundColor: 'var(--tz-surface-card)', border: '1px solid var(--tz-border-subtle)' }}
+        <button
+          type="button"
+          onClick={() => (wearStatus === 'in' ? setShowReasonSheet(true) : onToggleStatus('in'))}
+          className="flex-1 min-h-[54px] rounded-2xl flex flex-col justify-center gap-1 px-3 py-2 font-bold shadow-lg transition-transform active:scale-[0.97]"
+          style={{
+            background: 'linear-gradient(90deg, var(--tz-brand-teal) 0%, var(--tz-brand-mint) 100%)',
+            color: '#062018',
+          }}
         >
-          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--tz-text-secondary)' }}>
-            Today&rsquo;s wear
-          </p>
+          <span className="flex items-center justify-between">
+            <span className="w-5 h-5 rounded-full bg-black/10 flex items-center justify-center shrink-0">
+              <Plus className="w-3 h-3" />
+            </span>
+            <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+          </span>
+          <span className="text-left uppercase text-[12px] leading-tight">
+            {wearStatus === 'in' ? 'Take aligners out' : 'Put aligners in'}
+          </span>
+        </button>
+      </div>
 
-          <div className="flex items-center gap-4">
-            <WearProgressRing
-              wornSeconds={wornSeconds}
-              goalSeconds={goalSeconds}
-              hoursLabel={`${wearHours}h`}
-              minutesLabel={`${wearMins}m`}
+      {wearStatus === 'out' ? (
+        <div
+          className="flex items-center justify-between rounded-xl px-3 py-2"
+          style={{ backgroundColor: 'var(--tz-bg-canvas)', border: '1px solid var(--tz-border-subtle)' }}
+        >
+          <span className="text-xs font-medium" style={{ color: 'var(--tz-text-secondary)' }}>
+            Out for
+          </span>
+          <span className="text-sm font-bold tabular-nums" style={{ color: 'var(--tz-accent-sand)' }} aria-live="polite">
+            {formatStopwatch(elapsedOutSeconds)}
+          </span>
+        </div>
+      ) : (
+        <p className="text-xs" style={{ color: 'var(--tz-text-secondary)' }}>
+          {paceMessage}
+        </p>
+      )}
+    </div>
+  );
+
+  const renderGreetingChips = () => (
+    <div>
+      <button
+        type="button"
+        onClick={onOpenAccountSwitcher}
+        className="text-2xl font-bold text-left"
+        style={{ color: 'var(--tz-text-primary)' }}
+        title="Tap to switch patient profile"
+      >
+        {greeting}, {firstName}
+      </button>
+      <div className="flex flex-wrap items-center gap-2 mt-2.5">
+        <span
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium"
+          style={{ backgroundColor: 'var(--tz-surface-card)', border: '1px solid var(--tz-border-subtle)', color: 'var(--tz-text-primary)' }}
+        >
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--tz-brand-teal)' }} />
+          Tray {settings.currentTray} &middot; Day {trayDayNumber}
+        </span>
+        <span
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium"
+          style={{
+            backgroundColor: 'var(--tz-surface-card)',
+            border: '1px solid var(--tz-border-subtle)',
+            color: wearStatus === 'in' ? 'var(--tz-brand-teal)' : 'var(--tz-accent-sand)',
+          }}
+        >
+          <span
+            className="w-2 h-2 rounded-full"
+            style={{ backgroundColor: wearStatus === 'in' ? 'var(--tz-brand-teal)' : 'var(--tz-accent-sand)' }}
+          />
+          {stateSinceLabel
+            ? `${wearStatus === 'in' ? 'In' : 'Out'} since ${stateSinceLabel}`
+            : wearStatus === 'in'
+            ? 'Aligners in'
+            : 'Aligners out'}
+        </span>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Mobile (<1024px): single column, own embedded header, floating bottom nav lives in App.tsx */}
+      <div className={`tz-scope tz-${theme} min-h-screen lg:hidden`} style={{ backgroundColor: 'var(--tz-bg-canvas)' }}>
+        <div className="max-w-[430px] mx-auto w-full px-5 pt-5 pb-24 space-y-3">
+          <TrayceHeader theme={theme} onThemeChange={onThemeChange} avatarUrl={avatarUrl} onOpenProfile={onOpenProfile} />
+          {renderGreetingChips()}
+          {renderHeroCard()}
+
+          <TodaysRhythm
+            segments={rhythmSegments}
+            wornLabel={`${wearHours}h ${wearMins.toString().padStart(2, '0')}m worn`}
+            outLabel={`${formatDuration(totalOutMins)} out`}
+          />
+
+          <NextUpCard
+            title={nextUpTitle}
+            subtitle={nextUpSubtitle}
+            completedRoutines={nextUpSubtitle === 'Daily routine' && tasks.length > 0 ? completedTasksCount : undefined}
+            totalRoutines={nextUpSubtitle === 'Daily routine' && tasks.length > 0 ? tasks.length : undefined}
+            onOpen={onOpenDailyPlan}
+          />
+
+          <TreatmentShortcut
+            currentTray={settings.currentTray}
+            totalTrays={settings.totalTrays}
+            daysRemaining={daysUntilTrayChange}
+            completionPercent={completionPercent}
+            onOpen={onOpenTreatment}
+          />
+        </div>
+      </div>
+
+      {/* Desktop (>=1024px): two-column grid, no embedded header - the
+          persistent sidebar + top bar in App.tsx own that at this size. */}
+      <div className={`tz-scope tz-${theme} hidden lg:block`}>
+        {renderGreetingChips()}
+
+        <div className="grid gap-6 mt-6" style={{ gridTemplateColumns: '65% 1fr' }}>
+          <div className="space-y-6 min-w-0">
+            {renderHeroCard()}
+            <TodaysRhythm
+              segments={rhythmSegments}
+              wornLabel={`${wearHours}h ${wearMins.toString().padStart(2, '0')}m worn`}
+              outLabel={`${formatDuration(totalOutMins)} out`}
             />
-
-            <button
-              type="button"
-              onClick={() => (wearStatus === 'in' ? setShowReasonSheet(true) : onToggleStatus('in'))}
-              className="flex-1 min-h-[54px] rounded-2xl flex flex-col justify-center gap-1 px-3 py-2 font-bold shadow-lg transition-transform active:scale-[0.97]"
-              style={{
-                background: 'linear-gradient(90deg, var(--tz-brand-teal) 0%, var(--tz-brand-mint) 100%)',
-                color: '#062018',
-              }}
-            >
-              <span className="flex items-center justify-between">
-                <span className="w-5 h-5 rounded-full bg-black/10 flex items-center justify-center shrink-0">
-                  <Plus className="w-3 h-3" />
-                </span>
-                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-              </span>
-              <span className="text-left uppercase text-[12px] leading-tight">
-                {wearStatus === 'in' ? 'Take aligners out' : 'Put aligners in'}
-              </span>
-            </button>
           </div>
 
-          {wearStatus === 'out' ? (
-            <div
-              className="flex items-center justify-between rounded-xl px-3 py-2"
-              style={{ backgroundColor: 'var(--tz-bg-canvas)', border: '1px solid var(--tz-border-subtle)' }}
-            >
-              <span className="text-xs font-medium" style={{ color: 'var(--tz-text-secondary)' }}>
-                Out for
-              </span>
-              <span
-                className="text-sm font-bold tabular-nums"
-                style={{ color: 'var(--tz-accent-sand)' }}
-                aria-live="polite"
-              >
-                {formatStopwatch(elapsedOutSeconds)}
-              </span>
-            </div>
-          ) : (
-            <p className="text-xs" style={{ color: 'var(--tz-text-secondary)' }}>
-              {paceMessage}
-            </p>
-          )}
+          <div className="space-y-6 min-w-0">
+            <NextUpCard
+              title={nextUpTitle}
+              subtitle={nextUpSubtitle}
+              completedRoutines={nextUpSubtitle === 'Daily routine' && tasks.length > 0 ? completedTasksCount : undefined}
+              totalRoutines={nextUpSubtitle === 'Daily routine' && tasks.length > 0 ? tasks.length : undefined}
+              onOpen={onOpenDailyPlan}
+            />
+            <TodaysPlanCard tasks={tasks} onOpen={onOpenDailyPlan} />
+            <TreatmentShortcut
+              currentTray={settings.currentTray}
+              totalTrays={settings.totalTrays}
+              daysRemaining={daysUntilTrayChange}
+              completionPercent={completionPercent}
+              onOpen={onOpenTreatment}
+            />
+          </div>
         </div>
-
-        <TodaysRhythm
-          segments={rhythmSegments}
-          wornLabel={`${wearHours}h ${wearMins.toString().padStart(2, '0')}m worn`}
-          outLabel={`${formatDuration(totalOutMins)} out`}
-        />
-
-        <NextUpCard
-          title={nextUpTitle}
-          subtitle={nextUpSubtitle}
-          completedRoutines={nextUpSubtitle === 'Daily routine' && tasks.length > 0 ? completedTasksCount : undefined}
-          totalRoutines={nextUpSubtitle === 'Daily routine' && tasks.length > 0 ? tasks.length : undefined}
-          onOpen={onOpenDailyPlan}
-        />
-
-        <TreatmentShortcut
-          currentTray={settings.currentTray}
-          totalTrays={settings.totalTrays}
-          daysRemaining={daysUntilTrayChange}
-          completionPercent={completionPercent}
-          onOpen={onOpenTreatment}
-        />
       </div>
 
       {showReasonSheet && (
@@ -309,6 +353,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
           }}
         />
       )}
-    </div>
+    </>
   );
 };

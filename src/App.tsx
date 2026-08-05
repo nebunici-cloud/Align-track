@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { Navbar } from './components/Navbar';
-import { TrayProgressCard } from './components/TrayProgressCard';
-import { OrthodontistCard } from './components/OrthodontistCard';
-import { QuickTrackView } from './components/QuickTrackView';
 import { LoginScreen } from './components/LoginScreen';
 import { HomeView } from './components/home/HomeView';
 import { TrayceBottomNav, TrayceNavDestination } from './components/home/TrayceBottomNav';
+import { TrayceSidebar } from './components/home/TrayceSidebar';
+import { TrayceTopBar } from './components/home/TrayceTopBar';
 import { useTrayceTheme } from './hooks/useTrayceTheme';
 
 // Lazy-loaded: each of these is only ever needed once a specific tab is
@@ -90,7 +89,7 @@ import {
   INITIAL_NOTIFICATIONS,
 } from './utils/storage';
 
-import { Clock, BarChart3, Camera, Sparkles, CheckCircle2, Zap, Smile, Loader2 } from 'lucide-react';
+import { CheckCircle2, Smile, Loader2 } from 'lucide-react';
 
 function TabLoadingFallback() {
   return (
@@ -909,9 +908,11 @@ export default function App() {
         </div>
       )}
 
-      {/* Navigation Header — hidden on mobile while the redesigned Home
-          screen (which has its own compact header) is active */}
-      <div className={activeTab === 'quick' ? 'hidden sm:block' : ''}>
+      {/* Navigation Header — mobile-only (<1024px), and only on non-Home
+          tabs; the desktop sidebar/top bar below own that role at >=1024px,
+          and the Home tab has its own embedded header at every size below
+          that breakpoint. */}
+      <div className={activeTab === 'quick' ? 'hidden' : 'lg:hidden'}>
         <Navbar
           currentTray={settings.currentTray}
           totalTrays={settings.totalTrays}
@@ -928,89 +929,42 @@ export default function App() {
         />
       </div>
 
-      {/* Redesigned mobile Home screen — manages its own header, background
-          and safe-area padding, so it renders outside <main>'s padded
-          container rather than nested inside it. Desktop keeps the
-          classic dashboard (below) unchanged. */}
-      {activeTab === 'quick' && (
-        <div className="sm:hidden">
-          <HomeView
-            firstName={currentAccount?.name?.split(' ')[0] || 'there'}
-            avatarUrl={authUser?.photoURL}
+      <div className="flex-1 flex">
+        {/* Persistent desktop sidebar (>=1024px only) — hidden/zero-width
+            below that, so this row collapses to a single full-width mobile
+            column naturally, no separate mobile-only wrapper needed. */}
+        <div className="hidden lg:block">
+          <TrayceSidebar
             theme={trayceTheme}
-            onThemeChange={setTrayceTheme}
-            wearStatus={wearStatus}
-            currentOutStartTime={currentOutStartTime}
-            currentOutReason={currentOutReason}
-            todayLogs={todayLogs}
-            settings={settings}
-            tasks={tasks}
-            onToggleStatus={handleToggleWearStatus}
-            onOpenProfile={() => setIsSettingsModalOpen(true)}
+            active={activeTab === 'quick' ? 'home' : activeTab}
+            onNavigate={(destination: TrayceNavDestination) =>
+              setActiveTab(destination === 'home' ? 'quick' : destination)
+            }
+            currentAccount={currentAccount}
+            avatarUrl={authUser?.photoURL}
             onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
-            onOpenDailyPlan={() => setIsDailyPlanOpen(true)}
-            onOpenTreatment={() => setIsTreatmentSheetOpen(true)}
+            onOpenSettings={() => setIsSettingsModalOpen(true)}
           />
         </div>
-      )}
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6 pb-28 sm:pb-12 space-y-6">
-        {/* Top Navigation Tabs Bar (Desktop & Tablet) */}
-        <div className="hidden sm:flex items-center gap-1.5 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl w-full sm:w-auto overflow-x-auto custom-scrollbar">
-          <button
-            onClick={() => setActiveTab('quick')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
-              activeTab === 'quick'
-                ? 'bg-gradient-to-r from-amber-400 via-teal-400 to-cyan-400 text-slate-950 font-bold shadow-lg shadow-teal-500/15 ring-1 ring-amber-300/30'
-                : 'text-amber-300/90 hover:text-amber-200 hover:bg-slate-800/60'
-            }`}
-          >
-            <Zap className="w-4 h-4 text-amber-400 fill-amber-400/30" />
-            <span>Quick Tracker</span>
-          </button>
+        <div className={`flex-1 min-w-0 flex flex-col tz-scope tz-${trayceTheme}`}>
+          <div className="hidden lg:block" style={{ backgroundColor: 'var(--tz-bg-canvas)' }}>
+            <TrayceTopBar
+              theme={trayceTheme}
+              onThemeChange={setTrayceTheme}
+              unreadCount={unreadNotifCount}
+              avatarUrl={authUser?.photoURL}
+              onOpenNotifications={() => setIsNotifModalOpen(true)}
+              onOpenProfile={() => setIsSettingsModalOpen(true)}
+            />
+          </div>
 
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
-              activeTab === 'logs'
-                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 font-bold shadow-md shadow-teal-500/10'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            <span>Out Logs</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('analytics')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
-              activeTab === 'analytics'
-                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 font-bold shadow-md shadow-teal-500/10'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Analytics & Report</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('photos')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
-              activeTab === 'photos'
-                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 font-bold shadow-md shadow-teal-500/10'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-            }`}
-          >
-            <Camera className="w-4 h-4" />
-            <span>Smile Diary</span>
-          </button>
-        </div>
-
-        {/* TAB CONTENTS */}
-        {activeTab === 'quick' && (
-          <div className="hidden sm:block space-y-6">
-            <QuickTrackView
+          {activeTab === 'quick' && (
+            <HomeView
+              firstName={currentAccount?.name?.split(' ')[0] || 'there'}
+              avatarUrl={authUser?.photoURL}
+              theme={trayceTheme}
+              onThemeChange={setTrayceTheme}
               wearStatus={wearStatus}
               currentOutStartTime={currentOutStartTime}
               currentOutReason={currentOutReason}
@@ -1018,50 +972,48 @@ export default function App() {
               settings={settings}
               tasks={tasks}
               onToggleStatus={handleToggleWearStatus}
-              onToggleTask={handleToggleTask}
-              onOpenChewiesTimer={() => setIsChewiesModalOpen(true)}
-              onOpenAddManualLog={() => setActiveTab('logs')}
-              onUpdateSettings={handleUpdateSettings}
-            />
-
-            <div className="max-w-md mx-auto w-full space-y-6">
-              <TrayProgressCard
-                settings={settings}
-                onUpdateSettings={handleUpdateSettings}
-                onOpenPhotoDiary={() => setActiveTab('photos')}
-              />
-
-              <OrthodontistCard settings={settings} onUpdateSettings={handleUpdateSettings} />
-            </div>
-          </div>
-        )}
-
-        <Suspense fallback={<TabLoadingFallback />}>
-          {activeTab === 'logs' && (
-            <DailyLogsList
-              logs={logs}
-              settings={settings}
-              onAddLog={handleAddLog}
-              onEditLog={handleEditLog}
-              onDeleteLog={handleDeleteLog}
+              onOpenProfile={() => setIsSettingsModalOpen(true)}
+              onOpenAccountSwitcher={() => setIsAccountSwitcherOpen(true)}
+              onOpenDailyPlan={() => setIsDailyPlanOpen(true)}
+              onOpenTreatment={() => setIsTreatmentSheetOpen(true)}
             />
           )}
 
-          {activeTab === 'analytics' && <AnalyticsView logs={logs} settings={settings} />}
+          <Suspense fallback={<TabLoadingFallback />}>
+            {activeTab === 'logs' && (
+              <div className="flex-1 px-4 sm:px-6 lg:px-10 pt-6 lg:pt-8 pb-28 lg:pb-10 max-w-6xl w-full mx-auto lg:mx-0">
+                <DailyLogsList
+                  logs={logs}
+                  settings={settings}
+                  onAddLog={handleAddLog}
+                  onEditLog={handleEditLog}
+                  onDeleteLog={handleDeleteLog}
+                />
+              </div>
+            )}
 
-          {activeTab === 'photos' && (
-            <PhotoDiary
-              photos={photos}
-              settings={settings}
-              onAddPhoto={handleAddPhoto}
-              onDeletePhoto={handleDeletePhoto}
-            />
-          )}
-        </Suspense>
-      </main>
+            {activeTab === 'analytics' && (
+              <div className="flex-1 px-4 sm:px-6 lg:px-10 pt-6 lg:pt-8 pb-28 lg:pb-10 max-w-6xl w-full mx-auto lg:mx-0">
+                <AnalyticsView logs={logs} settings={settings} />
+              </div>
+            )}
 
-      {/* Mobile Fixed Bottom Navigation Dock */}
-      <div className="sm:hidden">
+            {activeTab === 'photos' && (
+              <div className="flex-1 px-4 sm:px-6 lg:px-10 pt-6 lg:pt-8 pb-28 lg:pb-10 max-w-6xl w-full mx-auto lg:mx-0">
+                <PhotoDiary
+                  photos={photos}
+                  settings={settings}
+                  onAddPhoto={handleAddPhoto}
+                  onDeletePhoto={handleDeletePhoto}
+                />
+              </div>
+            )}
+          </Suspense>
+        </div>
+      </div>
+
+      {/* Mobile Fixed Bottom Navigation Dock (<1024px) */}
+      <div className="lg:hidden">
         <TrayceBottomNav
           theme={trayceTheme}
           active={activeTab === 'quick' ? 'home' : activeTab}

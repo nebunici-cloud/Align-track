@@ -33,7 +33,7 @@ export const TodaysRhythm: React.FC<TodaysRhythmProps> = ({ segments, wornLabel,
           return (
             <div
               key={index}
-              className="flex-1 rounded-full"
+              className="flex-1 rounded-md"
               style={{ backgroundColor: STATE_COLOR[state], filter: `brightness(${brightness})` }}
             />
           );
