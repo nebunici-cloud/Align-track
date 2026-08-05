@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import type { Firestore } from 'firebase-admin/firestore';
+import type { Firestore, DocumentReference } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminDb } from './_lib/firebaseAdmin.js';
 import { sendMessage, formatElapsed } from './_lib/telegram.js';
@@ -29,6 +29,7 @@ function parseReason(argsText: string): OutReason | undefined {
 }
 
 const HELP_TEXT = `<b>AlignerTrack bot</b>
+/toggle [reason] - switch: out if currently in, in if currently out (reason only applies when going out)
 /out [reason] - take aligners out (reason optional, e.g. "/out lunch")
 /in - put aligners back in, logs the session
 /currentstatus - are aligners in or out right now
@@ -36,6 +37,77 @@ const HELP_TEXT = `<b>AlignerTrack bot</b>
 /silent - stop reminders for the current out-session
 /link CODE - link this chat to your AlignerTrack account
 /help - show this message`;
+
+async function performOut(
+  planRef: DocumentReference,
+  metaRef: DocumentReference,
+  chatId: number,
+  activeTimer: ActiveTimerState,
+  argsText: string
+): Promise<void> {
+  if (activeTimer.wearStatus === 'out' && activeTimer.startTime) {
+    const elapsed = formatElapsed(Date.now() - new Date(activeTimer.startTime).getTime());
+    await sendMessage(chatId, `Already out for ${elapsed}. Send /in when they're back in.`);
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  const reason = parseReason(argsText);
+  const newTimer = {
+    wearStatus: 'out',
+    startTime: nowIso,
+    reason: reason ?? null,
+    presetTimerMinutes: null,
+    updatedAt: nowIso,
+    // Explicit, not omitted: Firestore's merge:true recursively merges
+    // nested map fields, so leaving these out would let a previous
+    // session's muted/reminder state silently carry over into this one.
+    remindersMuted: false,
+    lastReminderSentAt: FieldValue.delete(),
+  };
+  await metaRef.set({ activeTimer: newTimer, updatedAt: nowIso }, { merge: true });
+  await sendMessage(chatId, `🦷 Aligners OUT${reason ? ` for ${reason.replace('_', ' ')}` : ''}. Send /in when they're back.`);
+}
+
+async function performIn(
+  planRef: DocumentReference,
+  metaRef: DocumentReference,
+  chatId: number,
+  activeTimer: ActiveTimerState
+): Promise<void> {
+  if (activeTimer.wearStatus !== 'out' || !activeTimer.startTime) {
+    await sendMessage(chatId, 'Aligners are already IN.');
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  const startMs = new Date(activeTimer.startTime).getTime();
+  const durationMins = Math.max(1, Math.round((Date.now() - startMs) / 60000));
+
+  const newLog: WearLog = {
+    id: `log_${Date.now()}`,
+    date: nowIso.slice(0, 10),
+    type: 'out',
+    startTime: activeTimer.startTime,
+    endTime: nowIso,
+    durationMinutes: durationMins,
+    reason: activeTimer.reason || undefined,
+  };
+  await planRef.collection('wearLogs').doc(newLog.id).set(JSON.parse(JSON.stringify(newLog)));
+
+  const newTimer = {
+    wearStatus: 'in',
+    startTime: null,
+    reason: null,
+    presetTimerMinutes: null,
+    updatedAt: nowIso,
+    remindersMuted: false,
+    lastReminderSentAt: FieldValue.delete(),
+  };
+  await metaRef.set({ activeTimer: newTimer, updatedAt: nowIso }, { merge: true });
+
+  await sendMessage(chatId, `✅ Aligners back IN! Logged ${durationMins}m out.`);
+}
 
 async function tryLinkCode(db: Firestore, chatId: number, code: string): Promise<void> {
   if (!code) {
@@ -206,67 +278,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (command === '/out') {
-      if (activeTimer.wearStatus === 'out' && activeTimer.startTime) {
-        const elapsed = formatElapsed(Date.now() - new Date(activeTimer.startTime).getTime());
-        await sendMessage(chatId, `Already out for ${elapsed}. Send /in when they're back in.`);
-        res.status(200).send('ok');
-        return;
-      }
-
-      const nowIso = new Date().toISOString();
-      const reason = parseReason(argsText);
-      const newTimer = {
-        wearStatus: 'out',
-        startTime: nowIso,
-        reason: reason ?? null,
-        presetTimerMinutes: null,
-        updatedAt: nowIso,
-        // Explicit, not omitted: Firestore's merge:true recursively merges
-        // nested map fields, so leaving these out would let a previous
-        // session's muted/reminder state silently carry over into this one.
-        remindersMuted: false,
-        lastReminderSentAt: FieldValue.delete(),
-      };
-      await metaRef.set({ activeTimer: newTimer, updatedAt: nowIso }, { merge: true });
-      await sendMessage(chatId, `🦷 Aligners OUT${reason ? ` for ${reason.replace('_', ' ')}` : ''}. Send /in when they're back.`);
+      await performOut(planRef, metaRef, chatId, activeTimer, argsText);
       res.status(200).send('ok');
       return;
     }
 
     if (command === '/in') {
-      if (activeTimer.wearStatus !== 'out' || !activeTimer.startTime) {
-        await sendMessage(chatId, 'Aligners are already IN.');
-        res.status(200).send('ok');
-        return;
+      await performIn(planRef, metaRef, chatId, activeTimer);
+      res.status(200).send('ok');
+      return;
+    }
+
+    if (command === '/toggle') {
+      if (activeTimer.wearStatus === 'out' && activeTimer.startTime) {
+        await performIn(planRef, metaRef, chatId, activeTimer);
+      } else {
+        await performOut(planRef, metaRef, chatId, activeTimer, argsText);
       }
-
-      const nowIso = new Date().toISOString();
-      const startMs = new Date(activeTimer.startTime).getTime();
-      const durationMins = Math.max(1, Math.round((Date.now() - startMs) / 60000));
-
-      const newLog: WearLog = {
-        id: `log_${Date.now()}`,
-        date: nowIso.slice(0, 10),
-        type: 'out',
-        startTime: activeTimer.startTime,
-        endTime: nowIso,
-        durationMinutes: durationMins,
-        reason: activeTimer.reason || undefined,
-      };
-      await planRef.collection('wearLogs').doc(newLog.id).set(JSON.parse(JSON.stringify(newLog)));
-
-      const newTimer = {
-        wearStatus: 'in',
-        startTime: null,
-        reason: null,
-        presetTimerMinutes: null,
-        updatedAt: nowIso,
-        remindersMuted: false,
-        lastReminderSentAt: FieldValue.delete(),
-      };
-      await metaRef.set({ activeTimer: newTimer, updatedAt: nowIso }, { merge: true });
-
-      await sendMessage(chatId, `✅ Aligners back IN! Logged ${durationMins}m out.`);
       res.status(200).send('ok');
       return;
     }
