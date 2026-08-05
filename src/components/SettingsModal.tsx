@@ -19,10 +19,14 @@ import {
   AlertTriangle,
   Loader2,
   ShieldAlert,
+  Send,
 } from 'lucide-react';
 import { AlignerSettings, WearLog, PhotoEntry, MaintenanceTask, NotificationLog, UserProfile } from '../types';
 import {
   auth,
+  db,
+  doc,
+  setDoc,
   User as FirebaseUser,
   deleteUser,
   reauthenticateWithPopup,
@@ -35,6 +39,7 @@ import { formatLocalDate } from '../utils/storage';
 interface SettingsModalProps {
   isOpen: boolean;
   settings: AlignerSettings;
+  currentAccountId?: string;
   logs?: WearLog[];
   photos?: PhotoEntry[];
   tasks?: MaintenanceTask[];
@@ -52,6 +57,7 @@ interface SettingsModalProps {
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   settings,
+  currentAccountId,
   logs = [],
   photos = [],
   tasks = [],
@@ -76,6 +82,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [rangeTo, setRangeTo] = useState<number>(3);
   const [rangeDays, setRangeDays] = useState<number>(10);
 
+  // Telegram bot linking state
+  const [telegramCode, setTelegramCode] = useState<string | null>(null);
+  const [generatingTelegramCode, setGeneratingTelegramCode] = useState<boolean>(false);
+
   // Danger zone: account deletion state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
@@ -85,6 +95,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const handleGenerateTelegramCode = async () => {
+    if (!authUser || !currentAccountId || generatingTelegramCode) return;
+    setGeneratingTelegramCode(true);
+    try {
+      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+      await setDoc(doc(db, 'telegramLinkCodes', code), {
+        uid: authUser.uid,
+        accountId: currentAccountId,
+        createdAt: new Date().toISOString(),
+      });
+      setTelegramCode(code);
+      setTimeout(() => setTelegramCode((c) => (c === code ? null : c)), 15 * 60 * 1000);
+    } catch (err) {
+      console.error('Failed to generate Telegram linking code:', err);
+    } finally {
+      setGeneratingTelegramCode(false);
+    }
+  };
 
   const handleExportBackup = () => {
     const backupData = {
@@ -274,6 +303,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* TELEGRAM BOT LINKING CARD */}
+        {authUser && (
+          <div className="bg-slate-800/60 p-3.5 border border-slate-700/60 rounded-xl space-y-2.5">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+              <Send className="w-4 h-4 text-sky-400" />
+              <span>Connect Telegram</span>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-normal">
+              Link a Telegram chat to start/stop wear tracking with{' '}
+              <span className="font-mono text-slate-300">/out</span> and{' '}
+              <span className="font-mono text-slate-300">/in</span> — no need to open the app.
+            </p>
+
+            {telegramCode ? (
+              <div className="bg-slate-900/70 border border-sky-500/30 rounded-lg p-3 space-y-2 text-center">
+                <p className="text-[11px] text-slate-400">
+                  Open the bot and send <span className="font-mono text-sky-300">/link {telegramCode}</span> (expires
+                  in 15 minutes)
+                </p>
+                <p className="font-mono text-lg font-bold text-sky-300 tracking-widest">{telegramCode}</p>
+                {import.meta.env.VITE_TELEGRAM_BOT_USERNAME && (
+                  <a
+                    href={`https://t.me/${import.meta.env.VITE_TELEGRAM_BOT_USERNAME}?start=${telegramCode}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    Open bot &amp; link
+                  </a>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleGenerateTelegramCode}
+                disabled={generatingTelegramCode}
+                className="w-full px-3 py-1.5 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-60"
+              >
+                {generatingTelegramCode ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5" />
+                )}
+                <span>Generate Linking Code</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* DATA STORAGE & BACKUP MANAGEMENT CARD */}
         <div className="bg-slate-800/60 p-3.5 border border-slate-700/60 rounded-xl space-y-3">

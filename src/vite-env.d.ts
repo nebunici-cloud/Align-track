@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_RECAPTCHA_SITE_KEY?: string;
+  readonly VITE_TELEGRAM_BOT_USERNAME?: string;
 }
 
 interface ImportMeta {

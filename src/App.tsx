@@ -1132,6 +1132,7 @@ export default function App() {
           <SettingsModal
             isOpen={isSettingsModalOpen}
             settings={settings}
+            currentAccountId={currentAccountId}
             logs={logs}
             photos={photos}
             tasks={tasks}

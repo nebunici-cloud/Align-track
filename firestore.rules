@@ -8,5 +8,17 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
     }
+
+    // Short-lived Telegram bot linking codes. A signed-in user may create a
+    // code for themselves (used once to link a Telegram chat to their
+    // account); only the server (Firebase Admin SDK, which bypasses these
+    // rules entirely) ever reads or deletes them, so no read/update/delete
+    // rule is granted here.
+    match /telegramLinkCodes/{code} {
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+    }
+
+    // Telegram chat -> account links. Written only by the server (Admin SDK)
+    // once a code above is redeemed; never readable or writable by clients.
   }
 }
