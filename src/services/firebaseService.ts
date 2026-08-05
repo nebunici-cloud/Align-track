@@ -62,6 +62,12 @@ export interface ActiveTimerState {
   // timestamp, that stale snapshot would silently overwrite the newer local
   // change instead of losing to it.
   updatedAt?: string;
+  // Telegram out-time reminders: set true by /silent to stop further nudges
+  // for the current out-session (cleared automatically on the next /out or
+  // /in). lastReminderSentAt tracks when the last nudge went out so the
+  // reminder-check job knows whether 15 minutes have passed since.
+  remindersMuted?: boolean;
+  lastReminderSentAt?: string;
 }
 
 export interface PlanMeta {

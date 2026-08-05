@@ -1,38 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { Firestore } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminDb } from './_lib/firebaseAdmin.js';
+import { sendMessage, formatElapsed } from './_lib/telegram.js';
 import type { OutReason, WearLog } from '../src/types';
+import type { ActiveTimerState } from '../src/services/firebaseService';
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const LINK_CODE_TTL_MS = 15 * 60 * 1000;
-
-interface ActiveTimerState {
-  wearStatus: 'in' | 'out';
-  startTime: string | null;
-  reason: OutReason | null;
-  presetTimerMinutes: number | null;
-  updatedAt?: string;
-}
-
-async function sendMessage(chatId: number, text: string): Promise<void> {
-  if (!BOT_TOKEN) {
-    console.error('TELEGRAM_BOT_TOKEN is not set — cannot send a reply');
-    return;
-  }
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.error(`Telegram sendMessage rejected: ${res.status} ${body}`);
-    }
-  } catch (err) {
-    console.error('Telegram sendMessage threw:', err);
-  }
-}
 
 const REASON_KEYWORDS: Record<OutReason, string[]> = {
   breakfast: ['breakfast'],
@@ -54,17 +28,12 @@ function parseReason(argsText: string): OutReason | undefined {
   return 'other';
 }
 
-function formatElapsed(ms: number): string {
-  const totalMinutes = Math.max(0, Math.round(ms / 60000));
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
 const HELP_TEXT = `<b>AlignerTrack bot</b>
 /out [reason] - take aligners out (reason optional, e.g. "/out lunch")
 /in - put aligners back in, logs the session
-/status - show current wear status
+/currentstatus - are aligners in or out right now
+/status - today's snapshot (out time, sessions, current state)
+/silent - stop reminders for the current out-session
 /link CODE - link this chat to your AlignerTrack account
 /help - show this message`;
 
@@ -166,7 +135,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const { uid, accountId } = linkSnap.data() as { uid: string; accountId: string };
 
-    const metaRef = db.collection('users').doc(uid).collection('plans').doc(accountId).collection('meta').doc('main');
+    const planRef = db.collection('users').doc(uid).collection('plans').doc(accountId);
+    const metaRef = planRef.collection('meta').doc('main');
     const metaSnap = await metaRef.get();
     const meta = metaSnap.data() || {};
     const activeTimer: ActiveTimerState = meta.activeTimer || {
@@ -176,13 +146,61 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       presetTimerMinutes: null,
     };
 
-    if (command === '/status') {
+    if (command === '/currentstatus') {
       if (activeTimer.wearStatus === 'out' && activeTimer.startTime) {
         const elapsed = formatElapsed(Date.now() - new Date(activeTimer.startTime).getTime());
-        await sendMessage(chatId, `🦷 Aligners OUT for ${elapsed}${activeTimer.reason ? ` (${activeTimer.reason})` : ''}.`);
+        await sendMessage(chatId, `🦷 Aligners OUT for ${elapsed}${activeTimer.reason ? ` (${activeTimer.reason.replace('_', ' ')})` : ''}.`);
       } else {
         await sendMessage(chatId, '✅ Aligners are IN.');
       }
+      res.status(200).send('ok');
+      return;
+    }
+
+    if (command === '/status') {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todaysLogsSnap = await planRef.collection('wearLogs').where('date', '==', todayStr).get();
+
+      let totalOutMinutes = 0;
+      let sessionCount = 0;
+      todaysLogsSnap.forEach((d) => {
+        totalOutMinutes += d.data().durationMinutes || 0;
+        sessionCount += 1;
+      });
+
+      let currentLine: string;
+      if (activeTimer.wearStatus === 'out' && activeTimer.startTime) {
+        const activeMs = Date.now() - new Date(activeTimer.startTime).getTime();
+        totalOutMinutes += Math.max(0, Math.round(activeMs / 60000));
+        sessionCount += 1;
+        currentLine = `Current: 🦷 OUT for ${formatElapsed(activeMs)}${activeTimer.reason ? ` (${activeTimer.reason.replace('_', ' ')})` : ''}`;
+      } else {
+        currentLine = 'Current: ✅ IN';
+      }
+
+      await sendMessage(
+        chatId,
+        [
+          '📅 <b>Today\'s snapshot</b>',
+          `Out time: ${formatElapsed(totalOutMinutes * 60000)} across ${sessionCount} session${sessionCount === 1 ? '' : 's'}`,
+          currentLine,
+        ].join('\n')
+      );
+      res.status(200).send('ok');
+      return;
+    }
+
+    if (command === '/silent') {
+      if (activeTimer.wearStatus !== 'out' || !activeTimer.startTime) {
+        await sendMessage(chatId, "Aligners aren't out right now — nothing to silence.");
+        res.status(200).send('ok');
+        return;
+      }
+      await metaRef.set(
+        { activeTimer: { ...activeTimer, remindersMuted: true }, updatedAt: new Date().toISOString() },
+        { merge: true }
+      );
+      await sendMessage(chatId, '🔕 Reminders silenced for this out-session. Send /in when they\'re back.');
       res.status(200).send('ok');
       return;
     }
@@ -197,12 +215,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const nowIso = new Date().toISOString();
       const reason = parseReason(argsText);
-      const newTimer: ActiveTimerState = {
+      const newTimer = {
         wearStatus: 'out',
         startTime: nowIso,
         reason: reason ?? null,
         presetTimerMinutes: null,
         updatedAt: nowIso,
+        // Explicit, not omitted: Firestore's merge:true recursively merges
+        // nested map fields, so leaving these out would let a previous
+        // session's muted/reminder state silently carry over into this one.
+        remindersMuted: false,
+        lastReminderSentAt: FieldValue.delete(),
       };
       await metaRef.set({ activeTimer: newTimer, updatedAt: nowIso }, { merge: true });
       await sendMessage(chatId, `🦷 Aligners OUT${reason ? ` for ${reason.replace('_', ' ')}` : ''}. Send /in when they're back.`);
@@ -230,21 +253,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         durationMinutes: durationMins,
         reason: activeTimer.reason || undefined,
       };
-      await db
-        .collection('users')
-        .doc(uid)
-        .collection('plans')
-        .doc(accountId)
-        .collection('wearLogs')
-        .doc(newLog.id)
-        .set(JSON.parse(JSON.stringify(newLog)));
+      await planRef.collection('wearLogs').doc(newLog.id).set(JSON.parse(JSON.stringify(newLog)));
 
-      const newTimer: ActiveTimerState = {
+      const newTimer = {
         wearStatus: 'in',
         startTime: null,
         reason: null,
         presetTimerMinutes: null,
         updatedAt: nowIso,
+        remindersMuted: false,
+        lastReminderSentAt: FieldValue.delete(),
       };
       await metaRef.set({ activeTimer: newTimer, updatedAt: nowIso }, { merge: true });
 
