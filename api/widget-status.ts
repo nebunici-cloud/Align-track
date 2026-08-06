@@ -29,8 +29,11 @@ function getAvailableMinutesToday(settings: AlignerSettings, todayStr: string, n
  * HTTP caller rather than reply via sendMessage.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Every response below must be JSON, including error paths: the caller
+  // (Scriptable's req.loadJSON()) fails with an opaque "not in the correct
+  // format" error if it ever receives a plain-text body.
   if (req.method !== 'GET') {
-    res.status(405).send('Method not allowed');
+    res.status(405).json({ error: 'Method not allowed' });
     return;
   }
 
@@ -39,7 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // endpoint sharing it doesn't widen exposure beyond what those already have.
   const secret = req.headers['x-widget-secret'];
   if (!process.env.TELEGRAM_WEBHOOK_SECRET || secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
-    res.status(401).send('Unauthorized');
+    res.status(401).json({ error: 'Unauthorized' });
     return;
   }
 
