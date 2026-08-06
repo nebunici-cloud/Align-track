@@ -34,8 +34,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // Reuses TELEGRAM_WEBHOOK_SECRET rather than a separate secret: it's
+  // already embedded in the on-device Shortcuts, so a read-only status
+  // endpoint sharing it doesn't widen exposure beyond what those already have.
   const secret = req.headers['x-widget-secret'];
-  if (!process.env.WIDGET_STATUS_SECRET || secret !== process.env.WIDGET_STATUS_SECRET) {
+  if (!process.env.TELEGRAM_WEBHOOK_SECRET || secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
     res.status(401).send('Unauthorized');
     return;
   }

@@ -7,8 +7,9 @@
 //    this whole file in.
 // 3. Fill in the three CONFIG values below:
 //      - chatId: your Telegram chat id (same one your /link CODE used).
-//      - widgetSecret: the WIDGET_STATUS_SECRET value set in Vercel's
-//        environment variables (see .env.example in the repo).
+//      - widgetSecret: the SAME secret you already put in your /out, /in,
+//        or /toggle Shortcut's headers (TELEGRAM_WEBHOOK_SECRET in Vercel) -
+//        this endpoint reuses it instead of needing its own.
 //      - toggleShortcutName: the exact name of the Shortcut you already
 //        built that sends /toggle to the bot.
 // 4. Long-press the Home Screen -> + -> Scriptable -> pick the small
@@ -23,7 +24,7 @@
 const CONFIG = {
   apiBase: "https://align-track-rho.vercel.app",
   chatId: "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID",
-  widgetSecret: "REPLACE_WITH_WIDGET_STATUS_SECRET",
+  widgetSecret: "REPLACE_WITH_YOUR_SHORTCUTS_SECRET", // same value as your /out, /in, /toggle Shortcuts
   toggleShortcutName: "Toggle Aligners",
 };
 
