@@ -133,21 +133,26 @@ function drawRing(size, progress, centerLabel) {
 }
 
 function buildWidget(status) {
+  // A small widget's actual content frame is ~141-158pt square depending on
+  // device (smaller than it looks in mockups) - the previous 118pt ring plus
+  // full-size text/spacers overflowed that and got clipped by the corner
+  // mask. Everything below is sized to fit the smallest common frame
+  // (~141pt) with margin to spare on larger ones.
   const widget = new ListWidget();
   widget.backgroundColor = COLORS.surfaceCard;
-  widget.setPadding(14, 14, 14, 14);
+  widget.setPadding(9, 10, 9, 10);
   widget.url = `shortcuts://run-shortcut?name=${encodeURIComponent(CONFIG.toggleShortcutName)}`;
 
   const wordmark = widget.addText("trayce");
-  wordmark.font = Font.boldSystemFont(14);
+  wordmark.font = Font.boldSystemFont(11);
   wordmark.textColor = COLORS.brandTeal;
 
-  widget.addSpacer(6);
+  widget.addSpacer(3);
 
   const isOut = status.wearStatus === "out" && !!status.startTime;
   const progress = status.goalSeconds > 0 ? status.wornSeconds / status.goalSeconds : 0;
   const ringLabel = formatHm(status.wornSeconds);
-  const ringSize = 118;
+  const ringSize = 76;
   // respectScreenScale in drawRing() renders at the device's native pixel
   // density, so passing the point size directly is already retina-sharp.
   const ringImage = drawRing(ringSize, progress, ringLabel);
@@ -158,31 +163,31 @@ function buildWidget(status) {
   ringElement.imageSize = new Size(ringSize, ringSize);
   ringRow.addSpacer();
 
-  widget.addSpacer(10);
+  widget.addSpacer(4);
 
   const statusRow = widget.addStack();
   statusRow.centerAlignContent();
   statusRow.addSpacer();
   const dot = statusRow.addText(isOut ? "🟠" : "🟢");
-  dot.font = Font.systemFont(12);
-  statusRow.addSpacer(5);
+  dot.font = Font.systemFont(9);
+  statusRow.addSpacer(3);
   const statusText = statusRow.addText(
-    isOut ? `Aligners out · ${formatElapsedSince(status.startTime)}` : "Aligners in"
+    isOut ? `Out · ${formatElapsedSince(status.startTime)}` : "Aligners in"
   );
-  statusText.font = Font.mediumSystemFont(13);
+  statusText.font = Font.mediumSystemFont(10.5);
   statusText.textColor = COLORS.textSecondary;
   statusRow.addSpacer();
 
-  widget.addSpacer(12);
+  widget.addSpacer(4);
 
   const pillRow = widget.addStack();
   pillRow.addSpacer();
   const pill = pillRow.addStack();
   pill.backgroundColor = isOut ? COLORS.brandTeal : COLORS.accentSand;
-  pill.cornerRadius = 16;
-  pill.setPadding(8, 16, 8, 16);
-  const pillText = pill.addText(isOut ? "↺ Put aligners in" : "🦷 Take aligners out");
-  pillText.font = Font.semiboldSystemFont(12);
+  pill.cornerRadius = 11;
+  pill.setPadding(4, 10, 4, 10);
+  const pillText = pill.addText(isOut ? "↺ Put in" : "🦷 Take out");
+  pillText.font = Font.semiboldSystemFont(10);
   pillText.textColor = new Color("#ffffff");
   pillRow.addSpacer();
 
