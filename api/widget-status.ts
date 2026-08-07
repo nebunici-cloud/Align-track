@@ -5,9 +5,9 @@ import type { AlignerSettings } from '../src/types';
 
 /**
  * Minutes available for wear-tracking today, mirroring
- * src/utils/storage.ts#getAvailableMinutesForDate but using the server's
- * UTC clock (there's no user-local timezone available here) — consistent
- * with the rest of the bot, which already buckets "today" by UTC date.
+ * src/utils/storage.ts#getAvailableMinutesForDate. `now` here is expected to
+ * already be shifted to the caller's local wall-clock time (see
+ * `toLocalTime` below) so getUTCHours()/getUTCMinutes() read as local time.
  */
 function getAvailableMinutesToday(settings: AlignerSettings, todayStr: string, now: Date): number {
   const planStartStr = settings.planStartDate || (settings.trayStartDate ? settings.trayStartDate.slice(0, 10) : todayStr);
@@ -21,6 +21,18 @@ function getAvailableMinutesToday(settings: AlignerSettings, todayStr: string, n
 
   const endWindowMin = Math.min(1440, Math.max(1, now.getUTCHours() * 60 + now.getUTCMinutes()));
   return Math.max(0, endWindowMin - startWindowMin);
+}
+
+/**
+ * Shifts a UTC Date by the caller's timezone offset (in the same sign
+ * convention as JS's Date#getTimezoneOffset — minutes to SUBTRACT from UTC
+ * to get local time) so its getUTC*() accessors read as local wall-clock
+ * values. The server itself runs in UTC and has no notion of the user's
+ * timezone otherwise, which previously made "today" and "minutes elapsed
+ * today" wrong by exactly the user's UTC offset.
+ */
+function toLocalTime(utcNow: Date, tzOffsetMinutes: number): Date {
+  return new Date(utcNow.getTime() - tzOffsetMinutes * 60000);
 }
 
 /**
@@ -53,6 +65,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // Matches JS's Date#getTimezoneOffset() sign convention (e.g. -180 for
+  // UTC+3) - the Scriptable widget sends its device's actual value. Falls
+  // back to 0 (UTC) for any caller that doesn't pass it.
+  const tzOffsetParam = req.query.tzOffsetMinutes;
+  const tzOffsetRaw = Array.isArray(tzOffsetParam) ? tzOffsetParam[0] : tzOffsetParam;
+  const tzOffsetMinutes = tzOffsetRaw !== undefined ? parseInt(tzOffsetRaw, 10) || 0 : 0;
+
   try {
     const db = getAdminDb();
     const linkSnap = await db.collection('telegramLinks').doc(String(chatId)).get();
@@ -75,7 +94,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const localNow = toLocalTime(now, tzOffsetMinutes);
+    const todayStr = localNow.toISOString().slice(0, 10);
 
     const todaysLogsSnap = await planRef.collection('wearLogs').where('date', '==', todayStr).get();
     let outMinutesToday = 0;
@@ -90,7 +110,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const goalSeconds = (settings?.dailyTargetHours ?? 22) * 3600;
-    const trackedWindowMinutes = getAvailableMinutesToday(settings, todayStr, now);
+    const trackedWindowMinutes = getAvailableMinutesToday(settings, todayStr, localNow);
     const wornMinutesToday = Math.max(0, trackedWindowMinutes - outMinutesToday);
     const wornSeconds = wornMinutesToday * 60;
 

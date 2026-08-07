@@ -66,7 +66,11 @@ function formatElapsedSince(iso) {
 }
 
 async function fetchStatus() {
-  const url = `${CONFIG.apiBase}/api/widget-status?chatId=${encodeURIComponent(CONFIG.chatId)}`;
+  // Sent so the server can bucket "today" and elapsed-today minutes by this
+  // device's actual local time instead of blindly assuming UTC - matches
+  // JS's Date#getTimezoneOffset() sign convention (e.g. -180 for UTC+3).
+  const tzOffsetMinutes = new Date().getTimezoneOffset();
+  const url = `${CONFIG.apiBase}/api/widget-status?chatId=${encodeURIComponent(CONFIG.chatId)}&tzOffsetMinutes=${tzOffsetMinutes}`;
   const req = new Request(url);
   req.headers = { "x-widget-secret": CONFIG.widgetSecret };
   req.timeoutInterval = 10;
