@@ -5,27 +5,25 @@
 // 1. Install Scriptable from the App Store (scriptable.app).
 // 2. Create a new script in Scriptable, name it "TrayceWidget", and paste
 //    this whole file in.
-// 3. Fill in the three CONFIG values below:
+// 3. Fill in the two CONFIG values below:
 //      - chatId: your Telegram chat id (same one your /link CODE used).
 //      - widgetSecret: the SAME secret you already put in your /out, /in,
 //        or /toggle Shortcut's headers (TELEGRAM_WEBHOOK_SECRET in Vercel) -
 //        this endpoint reuses it instead of needing its own.
-//      - toggleShortcutName: the exact name of the Shortcut you already
-//        built that sends /toggle to the bot.
 // 4. Long-press the Home Screen -> + -> Scriptable -> pick the small
 //    widget size -> add it -> long-press the widget -> Edit Widget ->
 //    set "Script" to TrayceWidget.
-// 5. Tapping the widget runs your existing /toggle Shortcut directly
-//    (via the shortcuts:// URL scheme) instead of opening Scriptable or
-//    the app, so the on/off switch you already built stays the single
-//    source of truth for toggling.
+// 5. Tapping the widget posts a synthetic "/toggle" straight to the bot's
+//    webhook itself - the same request your Shortcut sends, just without
+//    routing through the Shortcuts app. Scriptable still briefly opens to
+//    run this script (that hop is unavoidable for a "Run Script" widget),
+//    but Shortcuts no longer opens on top of it.
 // ────────────────────────────────────────────────────────────────────────
 
 const CONFIG = {
   apiBase: "https://align-track-rho.vercel.app",
   chatId: "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID",
   widgetSecret: "REPLACE_WITH_YOUR_SHORTCUTS_SECRET", // same value as your /out, /in, /toggle Shortcuts
-  toggleShortcutName: "Toggle Aligners",
 };
 
 const COLORS = {
@@ -79,6 +77,28 @@ async function fetchStatus() {
     throw new Error(json.error || `HTTP ${req.response.statusCode}`);
   }
   return json;
+}
+
+// Posts the exact same synthetic Telegram-update shape the /out, /in, and
+// /toggle Shortcuts already send to the bot webhook - straight to the bot,
+// no Shortcuts app involved. Mirrors telegram-webhook.ts's parsing of
+// update.message.chat.id / update.message.text.
+async function performToggle() {
+  const url = `${CONFIG.apiBase}/api/telegram-webhook`;
+  const req = new Request(url);
+  req.method = "POST";
+  req.headers = {
+    "Content-Type": "application/json",
+    "x-telegram-bot-api-secret-token": CONFIG.widgetSecret,
+  };
+  req.body = JSON.stringify({
+    message: { chat: { id: Number(CONFIG.chatId) }, text: "/toggle" },
+  });
+  req.timeoutInterval = 10;
+  await req.load();
+  if (req.response && req.response.statusCode >= 400) {
+    throw new Error(`Toggle failed: HTTP ${req.response.statusCode}`);
+  }
 }
 
 // Draws the progress ring AND the centered "20h 19m" label into one bitmap,
@@ -145,7 +165,6 @@ function buildWidget(status) {
   const widget = new ListWidget();
   widget.backgroundColor = COLORS.surfaceCard;
   widget.setPadding(9, 10, 9, 10);
-  widget.url = `shortcuts://run-shortcut?name=${encodeURIComponent(CONFIG.toggleShortcutName)}`;
 
   const wordmark = widget.addText("trayce");
   wordmark.font = Font.boldSystemFont(11);
@@ -216,6 +235,20 @@ function buildErrorWidget(message) {
 }
 
 async function run() {
+  // config.runsInWidget is only true for the OS's own background timeline
+  // refresh. Any other run (a Home Screen tap with "Run Script", or a
+  // manual ▶️ in the editor) means the user wants to toggle - do that
+  // first, then always show the freshest status either way.
+  if (!config.runsInWidget) {
+    try {
+      await performToggle();
+    } catch (err) {
+      Script.setWidget(buildErrorWidget(err.message || String(err)));
+      Script.complete();
+      return;
+    }
+  }
+
   let widget;
   try {
     const status = await fetchStatus();
@@ -224,12 +257,6 @@ async function run() {
     widget = buildErrorWidget(err.message || String(err));
   }
 
-  // Always just hand the widget to Script.setWidget() and finish - no
-  // presentSmall() call. A Home Screen tap configured as "Run Script" runs
-  // this exact code path (not config.runsInWidget), so calling
-  // presentSmall() there visibly opened Scriptable's UI before it then
-  // followed widget.url - a jarring extra hop on every tap. Scriptable's
-  // own size-preview tabs in the editor cover manual testing instead.
   Script.setWidget(widget);
   Script.complete();
 }
