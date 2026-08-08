@@ -10,12 +10,12 @@
 //      - chatId: your Telegram chat id (same one your /link CODE used).
 //      - widgetSecret: the SAME secret you already put in your /out, /in,
 //        or /toggle Shortcut's headers (TELEGRAM_WEBHOOK_SECRET in Vercel).
-// 4. Long-press the Home Screen -> + -> Scriptable -> pick the LARGE or
-//    SMALL widget size (this script renders a different, size-appropriate
-//    layout for each via config.widgetFamily - Medium isn't supported) ->
-//    add it -> long-press the widget -> Edit Widget -> set "Script" to
-//    TrayceWidgetRhythm. You can add both sizes at once, each showing the
-//    layout that fits it.
+// 4. Long-press the Home Screen -> + -> Scriptable -> pick the SMALL,
+//    MEDIUM, or LARGE widget size (this script renders a different,
+//    size-appropriate layout for each via config.widgetFamily) -> add it
+//    -> long-press the widget -> Edit Widget -> set "Script" to
+//    TrayceWidgetRhythm. You can add multiple sizes at once, each showing
+//    the layout that fits it - one script, no separate scripts per size.
 // 5. Tapping the widget posts a synthetic "/toggle" straight to the bot's
 //    webhook, same as TrayceWidget.js - Scriptable briefly opens to run
 //    the script (unavoidable for a "Run Script" widget), but no other app
@@ -76,6 +76,12 @@ function formatHm(totalSeconds) {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function formatHmPadded(totalMinutes) {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
 }
 
 // Device-local clock time (Scriptable runs on-device, so Date's own
@@ -282,6 +288,39 @@ function getContentWidth(horizontalPadding, isSmall) {
   return widgetFrameWidth - horizontalPadding * 2;
 }
 
+// Medium's frame width tier matches Large's; its height tier matches
+// Small's - unlike getContentWidth() above, buildMediumWidget() needs both
+// dimensions together (it splits the frame into two columns), so this
+// returns the full pair instead of just a content width.
+function getMediumFrameSize() {
+  const screenWidth = Math.min(Device.screenSize().width, Device.screenSize().height);
+  if (screenWidth >= 430) return { width: 364, height: 170 }; // Plus/Pro Max-class
+  if (screenWidth >= 390) return { width: 329, height: 158 }; // standard/Pro-class
+  return { width: 291, height: 141 }; // SE-class
+}
+
+// Adds a pill with a centered label (no icon) on top of a
+// drawPillBackground() image - flexible spacers on both sides let
+// Scriptable's own layout engine measure and center the real text, rather
+// than estimating its width.
+function addPill(parent, width, height, isOut) {
+  const pillBgImage = drawPillBackground(width, height, isOut);
+  const pillContainer = parent.addStack();
+  pillContainer.backgroundImage = pillBgImage;
+  pillContainer.size = new Size(width, height);
+  pillContainer.centerAlignContent();
+
+  pillContainer.addSpacer();
+
+  const pillLabel = pillContainer.addText(isOut ? "PUT ALIGNERS IN" : "TAKE ALIGNERS OUT");
+  pillLabel.font = Font.boldSystemFont(height * 0.3);
+  pillLabel.textColor = new Color("#092337");
+
+  pillContainer.addSpacer();
+
+  return pillContainer;
+}
+
 function buildLargeWidget(status) {
   const widget = new ListWidget();
   widget.backgroundGradient = buildBackgroundGradient();
@@ -450,21 +489,135 @@ function buildSmallWidget(status) {
   return widget;
 }
 
+// Two-column layout for the wide Medium family: wordmark/big-number/status
+// on the left, the rhythm chart + toggle pill on the right. A genuinely
+// different arrangement from Large/Small (which stack everything in one
+// column), not just a resized version of either.
+function buildMediumWidget(status) {
+  const widget = new ListWidget();
+  widget.backgroundGradient = buildBackgroundGradient();
+  const paddingH = 16;
+  const paddingV = 13;
+  widget.setPadding(paddingV, paddingH, paddingV, paddingH);
+
+  const frame = getMediumFrameSize();
+  const contentWidth = frame.width - paddingH * 2;
+  const contentHeight = frame.height - paddingV * 2;
+  const columnGap = 14;
+  const leftWidth = Math.round(contentWidth * 0.36);
+  const rightWidth = contentWidth - leftWidth - columnGap;
+
+  const row = widget.addStack();
+  row.size = new Size(contentWidth, contentHeight);
+
+  const isOut = status.wearStatus === "out" && !!status.startTime;
+  const stateColor = isOut ? COLORS.accentSand : COLORS.brandTeal;
+
+  // ── Left column: wordmark, big number, status, daily total ──
+  const left = row.addStack();
+  left.layoutVertically();
+  left.size = new Size(leftWidth, contentHeight);
+
+  const wordmarkRow = left.addStack();
+  wordmarkRow.topAlignContent();
+  const wordmark = wordmarkRow.addText("trayce");
+  wordmark.font = Font.systemFont(14);
+  wordmark.textColor = COLORS.textPrimary;
+  wordmarkRow.addSpacer(3);
+  const accentImg = wordmarkRow.addImage(drawAccentRing(16));
+  accentImg.imageSize = new Size(7, 7);
+  wordmarkRow.addSpacer();
+
+  left.addSpacer(6);
+
+  const bigNumber = left.addText(formatHm(status.wornSeconds));
+  bigNumber.font = Font.heavySystemFont(28);
+  bigNumber.textColor = COLORS.textPrimary;
+
+  const wornLabel = left.addText("WORN TODAY");
+  wornLabel.font = Font.boldSystemFont(8);
+  wornLabel.textColor = COLORS.textSecondary;
+
+  left.addSpacer();
+
+  // Two lines rather than one horizontal row: "Aligners out · since HH:MM"
+  // didn't fit the ~105pt left column on one line, so Scriptable wrapped
+  // the individual text elements mid-phrase into a jumbled multi-line mess.
+  const statusRow = left.addStack();
+  statusRow.centerAlignContent();
+  const dot = statusRow.addText("●");
+  dot.font = Font.systemFont(9);
+  dot.textColor = stateColor;
+  statusRow.addSpacer(4);
+  const statusLabel = statusRow.addText(isOut ? "Aligners out" : "Aligners in");
+  statusLabel.font = Font.boldSystemFont(10.5);
+  statusLabel.textColor = stateColor;
+
+  if (status.sinceIso) {
+    left.addSpacer(1);
+    const sinceRow = left.addStack();
+    sinceRow.addSpacer(13); // roughly indents under the label, past the dot
+    const sinceText = sinceRow.addText(`since ${formatClockTime(status.sinceIso)}`);
+    sinceText.font = Font.systemFont(10.5);
+    sinceText.textColor = COLORS.textSecondary;
+  }
+
+  left.addSpacer(3);
+
+  const totalRow = left.addStack();
+  totalRow.centerAlignContent();
+  const totalLabel = totalRow.addText("Total out today");
+  totalLabel.font = Font.systemFont(9.5);
+  totalLabel.textColor = COLORS.textSecondary;
+  totalRow.addSpacer(3);
+  const totalValue = totalRow.addText(`· ${formatHmPadded(status.outMinutesToday || 0)}`);
+  totalValue.font = Font.boldSystemFont(9.5);
+  totalValue.textColor = COLORS.accentSand;
+
+  row.addSpacer(columnGap);
+
+  // ── Right column: rhythm chart + toggle pill ──
+  const right = row.addStack();
+  right.layoutVertically();
+  right.size = new Size(rightWidth, contentHeight);
+
+  const rhythmLabel = right.addText("TODAY'S RHYTHM");
+  rhythmLabel.font = Font.boldSystemFont(9.5);
+  rhythmLabel.textColor = COLORS.textSecondary;
+
+  right.addSpacer(8);
+
+  const barsHeight = Math.max(30, contentHeight - 78);
+  const barsImage = drawRhythmBars(rightWidth, barsHeight, status.segments || [], 9);
+  const barsElement = right.addImage(barsImage);
+  barsElement.imageSize = new Size(rightWidth, barsImage.size.height);
+
+  right.addSpacer();
+
+  addPill(right, rightWidth, 34, isOut);
+
+  widget.refreshAfterDate = new Date(Date.now() + (isOut ? 5 : 20) * 60 * 1000);
+
+  return widget;
+}
+
 function buildWidget(status) {
-  return config.widgetFamily === "small" ? buildSmallWidget(status) : buildLargeWidget(status);
+  if (config.widgetFamily === "small") return buildSmallWidget(status);
+  if (config.widgetFamily === "medium") return buildMediumWidget(status);
+  return buildLargeWidget(status);
 }
 
 function buildErrorWidget(message) {
-  const isSmall = config.widgetFamily === "small";
+  const isCompact = config.widgetFamily === "small" || config.widgetFamily === "medium";
   const widget = new ListWidget();
   widget.backgroundColor = COLORS.surfaceCard;
-  widget.setPadding(isSmall ? 10 : 18, isSmall ? 10 : 18, isSmall ? 10 : 18, isSmall ? 10 : 18);
+  widget.setPadding(isCompact ? 10 : 18, isCompact ? 10 : 18, isCompact ? 10 : 18, isCompact ? 10 : 18);
   const title = widget.addText("trayce");
-  title.font = Font.boldSystemFont(isSmall ? 13 : 20);
+  title.font = Font.boldSystemFont(isCompact ? 13 : 20);
   title.textColor = COLORS.brandTeal;
-  widget.addSpacer(isSmall ? 6 : 10);
+  widget.addSpacer(isCompact ? 6 : 10);
   const body = widget.addText(`Widget error: ${message}`);
-  body.font = Font.systemFont(isSmall ? 9 : 13);
+  body.font = Font.systemFont(isCompact ? 9 : 13);
   body.textColor = COLORS.textSecondary;
   widget.refreshAfterDate = new Date(Date.now() + 5 * 60 * 1000);
   return widget;
