@@ -171,12 +171,15 @@ function drawRhythmBars(width, barsHeight, segments) {
   return ctx.getImage();
 }
 
-// Capsule button with a horizontal gradient + an icon badge + label, all
-// baked into one bitmap. Scriptable's DrawContext has no clip-path
-// primitive, so the "gradient" is straight vertical strips in the middle
-// with solid-color rounded caps at each end - reads as a capsule gradient
-// at this size, though not a mathematically exact one.
-function drawPill(width, height, isOut) {
+// Capsule GRADIENT ONLY (no badge, no text) - those are added as real
+// WidgetStack/WidgetText elements on top in buildWidget() instead of being
+// baked into this bitmap. An earlier version drew everything into one
+// image and estimated the label's width from its character count to
+// center the icon+label group, since DrawContext has no text-measurement
+// API - that estimate was visibly wrong on-device. Real WidgetText/spacer
+// layout lets Scriptable's own engine measure and center the group
+// correctly, with no guessing involved.
+function drawPillBackground(width, height, isOut) {
   const ctx = new DrawContext();
   ctx.size = new Size(width, height);
   ctx.opaque = false;
@@ -221,37 +224,6 @@ function drawPill(width, height, isOut) {
   ctx.addPath(rightCap);
   ctx.setFillColor(new Color(colorBHex));
   ctx.fillPath();
-
-  // Icon + label are treated as one group and centered together, rather
-  // than pinning the icon near the left edge and letting the label sprawl
-  // across the remaining width (which left it visibly off-center). Scriptable's
-  // DrawContext has no text-measurement API, so label width is estimated
-  // from character count - fine for short, fixed, all-caps button labels.
-  const badgeSize = height * 0.62;
-  const iconTextGap = 10;
-  const labelText = isOut ? "PUT ALIGNERS IN" : "TAKE ALIGNERS OUT";
-  const labelFontSize = height * 0.32;
-  const estCharWidth = labelFontSize * 0.62;
-  const estLabelWidth = labelText.length * estCharWidth;
-  const groupWidth = badgeSize + iconTextGap + estLabelWidth;
-  const groupStartX = Math.max(radius * 0.6, (width - groupWidth) / 2);
-
-  const badgeX = groupStartX;
-  const badgeY = (height - badgeSize) / 2;
-  const badgePath = new Path();
-  badgePath.addEllipse(new Rect(badgeX, badgeY, badgeSize, badgeSize));
-  ctx.addPath(badgePath);
-  ctx.setFillColor(new Color("#ffffff", 0.28));
-  ctx.fillPath();
-
-  ctx.setTextAlignedCenter();
-  ctx.setTextColor(new Color("#092337"));
-  ctx.setFont(Font.boldSystemFont(badgeSize * 0.56));
-  ctx.drawTextInRect(isOut ? "+" : "↗", new Rect(badgeX, badgeY - height * 0.02, badgeSize, badgeSize));
-
-  ctx.setFont(Font.boldSystemFont(labelFontSize));
-  const labelX = badgeX + badgeSize + iconTextGap;
-  ctx.drawTextInRect(labelText, new Rect(labelX, 0, width - labelX, height));
 
   return ctx.getImage();
 }
@@ -362,9 +334,34 @@ function buildWidget(status) {
   widget.addSpacer(14);
 
   const pillHeight = 52;
-  const pillImage = drawPill(contentWidth, pillHeight, isOut);
-  const pillElement = widget.addImage(pillImage);
-  pillElement.imageSize = new Size(contentWidth, pillHeight);
+  const pillBgImage = drawPillBackground(contentWidth, pillHeight, isOut);
+  const pillContainer = widget.addStack();
+  pillContainer.backgroundImage = pillBgImage;
+  pillContainer.size = new Size(contentWidth, pillHeight);
+  pillContainer.centerAlignContent();
+
+  // Flexible spacers on both sides push this (badge + label) row to true
+  // center - Scriptable measures the real label text here, unlike the
+  // DrawContext version this replaced.
+  pillContainer.addSpacer();
+
+  const badgeSize = pillHeight * 0.62;
+  const badgeStack = pillContainer.addStack();
+  badgeStack.size = new Size(badgeSize, badgeSize);
+  badgeStack.backgroundColor = new Color("#ffffff", 0.28);
+  badgeStack.cornerRadius = badgeSize / 2;
+  badgeStack.centerAlignContent();
+  const iconText = badgeStack.addText(isOut ? "+" : "↗");
+  iconText.font = Font.boldSystemFont(badgeSize * 0.56);
+  iconText.textColor = new Color("#092337");
+
+  pillContainer.addSpacer(10);
+
+  const pillLabel = pillContainer.addText(isOut ? "PUT ALIGNERS IN" : "TAKE ALIGNERS OUT");
+  pillLabel.font = Font.boldSystemFont(pillHeight * 0.32);
+  pillLabel.textColor = new Color("#092337");
+
+  pillContainer.addSpacer();
 
   widget.refreshAfterDate = new Date(Date.now() + (isOut ? 5 : 20) * 60 * 1000);
 
