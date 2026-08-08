@@ -282,20 +282,18 @@ function buildWidget(status) {
   const contentWidth = getContentWidth(horizontalPadding);
 
   const wordmarkRow = widget.addStack();
-  wordmarkRow.centerAlignContent();
+  // Top-aligning the whole row (rather than centering it) is what actually
+  // puts the ring near the wordmark's cap-height instead of its vertical
+  // middle - the previous attempt (a taller container with the ring pinned
+  // to ITS top, itself then center-aligned in the row) only shifted it a
+  // few points, nowhere near this.
+  wordmarkRow.topAlignContent();
   const wordmark = wordmarkRow.addText("trayce");
   wordmark.font = Font.systemFont(26);
   wordmark.textColor = COLORS.textPrimary;
   wordmarkRow.addSpacer(4);
-  // Extra-tall container with the ring pinned to its top (via the trailing
-  // spacer) so it sits higher than a plain center-aligned image would,
-  // instead of level with the wordmark's vertical middle.
-  const accentContainer = wordmarkRow.addStack();
-  accentContainer.layoutVertically();
-  accentContainer.size = new Size(11, 20);
-  const accentImg = accentContainer.addImage(drawAccentRing(24));
+  const accentImg = wordmarkRow.addImage(drawAccentRing(24));
   accentImg.imageSize = new Size(11, 11);
-  accentContainer.addSpacer();
   wordmarkRow.addSpacer();
 
   widget.addSpacer(14);
