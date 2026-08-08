@@ -663,12 +663,22 @@ function buildAccessoryInlineWidget(status) {
 }
 
 function buildWidget(status) {
-  if (config.widgetFamily === "accessoryRectangular") return buildAccessoryRectangularWidget(status);
-  if (config.widgetFamily === "accessoryCircular") return buildAccessoryCircularWidget(status);
-  if (config.widgetFamily === "accessoryInline") return buildAccessoryInlineWidget(status);
-  if (config.widgetFamily === "small") return buildSmallWidget(status);
-  if (config.widgetFamily === "medium") return buildMediumWidget(status);
-  return buildLargeWidget(status);
+  const family = config.widgetFamily;
+  if (family === "small") return buildSmallWidget(status);
+  if (family === "medium") return buildMediumWidget(status);
+  if (family === "large") return buildLargeWidget(status);
+  if (family === "accessoryCircular") return buildAccessoryCircularWidget(status);
+  if (family === "accessoryInline") return buildAccessoryInlineWidget(status);
+  // Any Lock Screen slot - accessoryRectangular, or anything else this
+  // hasn't been explicitly taught about - falls back to the plain-text
+  // rectangular layout, not buildLargeWidget. Lock Screen accessory
+  // widgets only support text/symbols, not custom images or gradients;
+  // when Large's image-heavy content got force-fed into one (because the
+  // exact family string didn't match what was expected here), iOS
+  // couldn't render it and fell back to a broken, monochrome-tinted mess.
+  // A safe, always-fits text layout as the fallback avoids that outcome
+  // regardless of which exact string a given iOS version reports.
+  return buildAccessoryRectangularWidget(status);
 }
 
 function buildErrorWidget(message) {
