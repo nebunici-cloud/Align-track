@@ -20,7 +20,11 @@
 //    is involved.
 // ────────────────────────────────────────────────────────────────────────
 
-const CONFIG = {
+// If a loader script (TrayceWidgetRhythm-Loader.js) already defined
+// globalThis.TRAYCE_CONFIG with real values before fetching and running
+// this file, use that instead - keeps real secrets out of this file
+// entirely, since this exact file lives in a PUBLIC GitHub repo.
+const CONFIG = (typeof TRAYCE_CONFIG !== "undefined" && TRAYCE_CONFIG) || {
   apiBase: "https://align-track-rho.vercel.app",
   chatId: "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID",
   widgetSecret: "REPLACE_WITH_YOUR_SHORTCUTS_SECRET", // same value as your /out, /in, /toggle Shortcuts
