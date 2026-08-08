@@ -112,9 +112,17 @@ async function performToggle() {
 
 // 24 rounded bars, one per hour, each brightness-ramped left-to-right -
 // mirrors src/components/home/TodaysRhythm.tsx's segment coloring exactly.
-function drawRhythmBars(width, height, segments) {
+// Draws the bars AND the "00:00 / 12:00 / 23:59" axis labels into ONE
+// bitmap so they're pixel-locked together regardless of the widget's true
+// rendered width - keeping them as separate elements let the axis row's
+// spacers stretch to the widget's real (wider-than-guessed) content width
+// while the bars image stayed at a fixed guess, so the labels drifted past
+// where the bars actually ended.
+function drawRhythmBars(width, barsHeight, segments) {
+  const labelGap = 4;
+  const labelHeight = 14;
   const ctx = new DrawContext();
-  ctx.size = new Size(width, height);
+  ctx.size = new Size(width, barsHeight + labelGap + labelHeight);
   ctx.opaque = false;
   ctx.respectScreenScale = true;
 
@@ -132,11 +140,24 @@ function drawRhythmBars(width, height, segments) {
     const color = applyBrightness(stateHex[state] || HEX.stateInactive, brightness);
     const x = i * (barWidth + gap);
     const path = new Path();
-    path.addRoundedRect(new Rect(x, 0, barWidth, height), cornerRadius, cornerRadius);
+    path.addRoundedRect(new Rect(x, 0, barWidth, barsHeight), cornerRadius, cornerRadius);
     ctx.addPath(path);
     ctx.setFillColor(color);
     ctx.fillPath();
   });
+
+  const labelY = barsHeight + labelGap;
+  ctx.setFont(Font.systemFont(11));
+  ctx.setTextColor(COLORS.textSecondary);
+
+  ctx.setTextAlignedLeft();
+  ctx.drawTextInRect("00:00", new Rect(0, labelY, 70, labelHeight));
+
+  ctx.setTextAlignedCenter();
+  ctx.drawTextInRect("12:00", new Rect(width / 2 - 35, labelY, 70, labelHeight));
+
+  ctx.setTextAlignedRight();
+  ctx.drawTextInRect("23:59", new Rect(width - 70, labelY, 70, labelHeight));
 
   return ctx.getImage();
 }
@@ -162,19 +183,25 @@ function drawPill(width, height, isOut) {
   ctx.setFillColor(new Color(colorAHex));
   ctx.fillPath();
 
-  // Fewer, generously-overlapping strips (2x width, later ones painted on
-  // top) rather than many hairline-adjacent ones - thin abutting rects
-  // left faint antialiased seams between them that, repeated dozens of
-  // times, visibly washed out the whole gradient toward the background.
+  // Fewer, generously-overlapping strips (later ones painted on top) rather
+  // than many hairline-adjacent ones - thin abutting rects left faint
+  // antialiased seams that, repeated dozens of times, visibly washed out
+  // the gradient. Each strip is explicitly clamped to end at `bodyEnd`: a
+  // filled ellipse only paints inside its actual curve, not its full
+  // bounding square, so a rect overshooting into the cap's corner zone
+  // stayed visible as a jagged notch instead of being covered by the cap.
+  const bodyEnd = width - radius;
   const steps = 16;
-  const bandWidth = Math.max(0, width - height);
+  const bandWidth = Math.max(0, bodyEnd - radius);
   const stepWidth = bandWidth / steps;
   for (let i = 0; i < steps; i++) {
     const t = i / (steps - 1);
     const color = lerpColor(colorAHex, colorBHex, t);
     const x = radius + i * stepWidth;
+    const rectWidth = Math.max(0, Math.min(stepWidth * 1.6, bodyEnd - x));
+    if (rectWidth <= 0) continue;
     const rectPath = new Path();
-    rectPath.addRect(new Rect(x, 0, stepWidth * 2, height));
+    rectPath.addRect(new Rect(x, 0, rectWidth, height));
     ctx.addPath(rectPath);
     ctx.setFillColor(color);
     ctx.fillPath();
@@ -222,14 +249,30 @@ function drawAccentRing(size) {
   return ctx.getImage();
 }
 
+// Scriptable has no API to read the widget's actual rendered width, so this
+// maps the device's screen width to Apple's published Large-widget frame
+// widths (widget frame width is shared with Medium) and subtracts our own
+// left+right padding. A flat guess (previously 300) was narrower than the
+// real content area on this device, leaving the bars/pill visibly short of
+// the axis labels and other text, which naturally stretch to the true width.
+function getContentWidth(horizontalPadding) {
+  const screenWidth = Math.min(Device.screenSize().width, Device.screenSize().height);
+  let widgetFrameWidth;
+  if (screenWidth >= 430) widgetFrameWidth = 364; // Plus/Pro Max-class
+  else if (screenWidth >= 390) widgetFrameWidth = 329; // standard/Pro-class
+  else widgetFrameWidth = 291; // SE-class
+  return widgetFrameWidth - horizontalPadding * 2;
+}
+
 function buildWidget(status) {
-  // Sized for the LARGE Scriptable widget family (~320-338pt content width
-  // after padding on most devices) - this much content (big number, 24
-  // bars, axis labels, status line, pill) does not fit Small or Medium.
+  // Sized for the LARGE Scriptable widget family - this much content (big
+  // number, 24 bars, axis labels, status line, pill) does not fit Small or
+  // Medium.
   const widget = new ListWidget();
   widget.backgroundColor = COLORS.surfaceCard;
-  widget.setPadding(18, 18, 16, 18);
-  const contentWidth = 300;
+  const horizontalPadding = 18;
+  widget.setPadding(18, horizontalPadding, 16, horizontalPadding);
+  const contentWidth = getContentWidth(horizontalPadding);
 
   const wordmarkRow = widget.addStack();
   wordmarkRow.centerAlignContent();
@@ -259,22 +302,7 @@ function buildWidget(status) {
   const barsHeight = 78;
   const barsImage = drawRhythmBars(contentWidth, barsHeight, status.segments || []);
   const barsElement = widget.addImage(barsImage);
-  barsElement.imageSize = new Size(contentWidth, barsHeight);
-
-  widget.addSpacer(4);
-
-  const axisRow = widget.addStack();
-  const t0 = axisRow.addText("00:00");
-  t0.font = Font.systemFont(11);
-  t0.textColor = COLORS.textSecondary;
-  axisRow.addSpacer();
-  const t12 = axisRow.addText("12:00");
-  t12.font = Font.systemFont(11);
-  t12.textColor = COLORS.textSecondary;
-  axisRow.addSpacer();
-  const t24 = axisRow.addText("23:59");
-  t24.font = Font.systemFont(11);
-  t24.textColor = COLORS.textSecondary;
+  barsElement.imageSize = new Size(contentWidth, barsImage.size.height);
 
   widget.addSpacer(12);
 
