@@ -243,11 +243,11 @@ function drawAccentRing(size) {
   return ctx.getImage();
 }
 
-// Adds a pill with an icon badge + centered label on top of a
-// drawPillBackground() image - flexible spacers on both sides of the
-// (badge + gap + label) group let Scriptable's own layout engine measure
-// and center the real text, rather than estimating its width.
-function addPillWithIcon(parent, width, height, isOut) {
+// Adds a pill with a centered label (no icon) on top of a
+// drawPillBackground() image - flexible spacers on both sides let
+// Scriptable's own layout engine measure and center the real text,
+// rather than estimating its width.
+function addPill(parent, width, height, isOut) {
   const pillBgImage = drawPillBackground(width, height, isOut);
   const pillContainer = parent.addStack();
   pillContainer.backgroundImage = pillBgImage;
@@ -255,18 +255,6 @@ function addPillWithIcon(parent, width, height, isOut) {
   pillContainer.centerAlignContent();
 
   pillContainer.addSpacer();
-
-  const badgeSize = height * 0.62;
-  const badgeStack = pillContainer.addStack();
-  badgeStack.size = new Size(badgeSize, badgeSize);
-  badgeStack.backgroundColor = new Color("#ffffff", 0.28);
-  badgeStack.cornerRadius = badgeSize / 2;
-  badgeStack.centerAlignContent();
-  const iconText = badgeStack.addText(isOut ? "+" : "↗");
-  iconText.font = Font.boldSystemFont(badgeSize * 0.56);
-  iconText.textColor = new Color("#092337");
-
-  pillContainer.addSpacer(8);
 
   const pillLabel = pillContainer.addText(isOut ? "PUT ALIGNERS IN" : "TAKE ALIGNERS OUT");
   pillLabel.font = Font.boldSystemFont(height * 0.3);
@@ -334,6 +322,10 @@ function buildWidget(status) {
 
   left.addSpacer();
 
+  // Two lines rather than one horizontal row: "Aligners out · since HH:MM"
+  // all on one line didn't fit the ~105pt left column, so Scriptable
+  // wrapped individual text elements mid-phrase ("Aligners" / "in" / "·
+  // since" / "14:27" each landing on their own line in a jumbled order).
   const statusRow = left.addStack();
   statusRow.centerAlignContent();
   const dot = statusRow.addText("●");
@@ -343,9 +335,12 @@ function buildWidget(status) {
   const statusLabel = statusRow.addText(isOut ? "Aligners out" : "Aligners in");
   statusLabel.font = Font.boldSystemFont(10.5);
   statusLabel.textColor = stateColor;
+
   if (status.sinceIso) {
-    statusRow.addSpacer(3);
-    const sinceText = statusRow.addText(`· since ${formatClockTime(status.sinceIso)}`);
+    left.addSpacer(1);
+    const sinceRow = left.addStack();
+    sinceRow.addSpacer(13); // roughly indents under the label, past the dot
+    const sinceText = sinceRow.addText(`since ${formatClockTime(status.sinceIso)}`);
     sinceText.font = Font.systemFont(10.5);
     sinceText.textColor = COLORS.textSecondary;
   }
@@ -383,7 +378,7 @@ function buildWidget(status) {
   right.addSpacer();
 
   const pillHeight = 34;
-  addPillWithIcon(right, rightWidth, pillHeight, isOut);
+  addPill(right, rightWidth, pillHeight, isOut);
 
   widget.refreshAfterDate = new Date(Date.now() + (isOut ? 5 : 20) * 60 * 1000);
 
