@@ -345,22 +345,9 @@ function buildWidget(status) {
   pillContainer.size = new Size(contentWidth, pillHeight);
   pillContainer.centerAlignContent();
 
-  // Flexible spacers on both sides push this (badge + label) row to true
-  // center - Scriptable measures the real label text here, unlike the
-  // DrawContext version this replaced.
+  // Flexible spacers on both sides center the label - Scriptable measures
+  // the real text here, unlike the DrawContext version this replaced.
   pillContainer.addSpacer();
-
-  const badgeSize = pillHeight * 0.62;
-  const badgeStack = pillContainer.addStack();
-  badgeStack.size = new Size(badgeSize, badgeSize);
-  badgeStack.backgroundColor = new Color("#ffffff", 0.28);
-  badgeStack.cornerRadius = badgeSize / 2;
-  badgeStack.centerAlignContent();
-  const iconText = badgeStack.addText(isOut ? "+" : "↗");
-  iconText.font = Font.boldSystemFont(badgeSize * 0.56);
-  iconText.textColor = new Color("#092337");
-
-  pillContainer.addSpacer(10);
 
   const pillLabel = pillContainer.addText(isOut ? "PUT ALIGNERS IN" : "TAKE ALIGNERS OUT");
   pillLabel.font = Font.boldSystemFont(pillHeight * 0.32);
