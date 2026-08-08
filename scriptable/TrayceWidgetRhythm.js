@@ -10,15 +10,15 @@
 //      - chatId: your Telegram chat id (same one your /link CODE used).
 //      - widgetSecret: the SAME secret you already put in your /out, /in,
 //        or /toggle Shortcut's headers (TELEGRAM_WEBHOOK_SECRET in Vercel).
-// 4. For a Home Screen widget: long-press the Home Screen -> + ->
-//    Scriptable -> pick SMALL, MEDIUM, or LARGE -> add it -> long-press
-//    the widget -> Edit Widget -> set "Script" to TrayceWidgetRhythm.
-//    For a Lock Screen widget: long-press the Lock Screen -> Customize ->
-//    Lock Screen -> tap a widget slot -> Scriptable -> pick a style ->
-//    set "Script" to TrayceWidgetRhythm the same way. This one script
-//    renders a different, size-appropriate layout for every family via
-//    config.widgetFamily - add as many sizes/slots as you want, all
-//    staying in sync automatically.
+// 4. Long-press the Home Screen -> + -> Scriptable -> pick SMALL, MEDIUM,
+//    or LARGE (this script renders a different, size-appropriate layout
+//    for each via config.widgetFamily) -> add it -> long-press the widget
+//    -> Edit Widget -> set "Script" to TrayceWidgetRhythm. You can add
+//    multiple sizes at once, each showing the layout that fits it.
+//    For a LOCK SCREEN widget, use TrayceWidgetLockScreen.js instead - a
+//    separate script, since Lock Screen widgets are rendered by iOS in a
+//    plain monochrome text-only style, fundamentally different from the
+//    full-color graphics here.
 // 5. Tapping the widget posts a synthetic "/toggle" straight to the bot's
 //    webhook, same as TrayceWidget.js - Scriptable briefly opens to run
 //    the script (unavoidable for a "Run Script" widget), but no other app
@@ -604,81 +604,18 @@ function buildMediumWidget(status) {
   return widget;
 }
 
-// Lock Screen widgets ("accessory" families) are a different world from
-// Home Screen ones: iOS renders them itself in a monochrome vibrancy
-// style, ignoring custom colors/gradients/backgrounds entirely - so these
-// are plain white text only, no drawn bars/pill/gradient. Tapping still
-// runs this same script (same toggle-on-tap behavior as the other sizes,
-// since run() dispatches on config.runsInWidget, not widget family).
-function buildAccessoryRectangularWidget(status) {
-  const widget = new ListWidget();
-  const isOut = status.wearStatus === "out" && !!status.startTime;
-
-  const bigNumber = widget.addText(formatHm(status.wornSeconds));
-  bigNumber.font = Font.boldSystemFont(20);
-  bigNumber.textColor = Color.white();
-
-  widget.addSpacer(2);
-
-  const stateText = status.sinceIso
-    ? `${isOut ? "Out" : "In"} since ${formatClockTime(status.sinceIso)}`
-    : isOut
-    ? "Out"
-    : "In";
-  const stateLabel = widget.addText(stateText);
-  stateLabel.font = Font.systemFont(13);
-  stateLabel.textColor = Color.white();
-
-  widget.refreshAfterDate = new Date(Date.now() + (isOut ? 5 : 20) * 60 * 1000);
-  return widget;
-}
-
-function buildAccessoryCircularWidget(status) {
-  const widget = new ListWidget();
-  widget.setPadding(2, 2, 2, 2);
-  const isOut = status.wearStatus === "out" && !!status.startTime;
-  const totalMinutes = Math.max(0, Math.round(status.wornSeconds / 60));
-
-  const hLine = widget.addText(`${Math.floor(totalMinutes / 60)}h`);
-  hLine.font = Font.boldSystemFont(15);
-  hLine.textColor = Color.white();
-  hLine.centerAlignText();
-
-  const mLine = widget.addText(`${totalMinutes % 60}m`);
-  mLine.font = Font.systemFont(11);
-  mLine.textColor = Color.white();
-  mLine.centerAlignText();
-
-  widget.refreshAfterDate = new Date(Date.now() + (isOut ? 5 : 20) * 60 * 1000);
-  return widget;
-}
-
-function buildAccessoryInlineWidget(status) {
-  const widget = new ListWidget();
-  const isOut = status.wearStatus === "out" && !!status.startTime;
-  const line = widget.addText(`🦷 ${formatHm(status.wornSeconds)} · ${isOut ? "Out" : "In"}`);
-  line.textColor = Color.white();
-  widget.refreshAfterDate = new Date(Date.now() + (isOut ? 5 : 20) * 60 * 1000);
-  return widget;
-}
-
+// Lock Screen widgets live in TrayceWidgetLockScreen.js instead - a
+// genuinely different rendering world (iOS forces plain monochrome
+// text/symbols there, no custom colors/gradients/images at all), unlike
+// Small/Medium/Large which all share full graphical capability and differ
+// only in available space. Keeping this script Home-Screen-only avoids the
+// failure mode this had briefly: an unrecognized widgetFamily string
+// falling through to this file's image-heavy Large layout, which Lock
+// Screen can't render, producing a broken monochrome-tinted mess.
 function buildWidget(status) {
-  const family = config.widgetFamily;
-  if (family === "small") return buildSmallWidget(status);
-  if (family === "medium") return buildMediumWidget(status);
-  if (family === "large") return buildLargeWidget(status);
-  if (family === "accessoryCircular") return buildAccessoryCircularWidget(status);
-  if (family === "accessoryInline") return buildAccessoryInlineWidget(status);
-  // Any Lock Screen slot - accessoryRectangular, or anything else this
-  // hasn't been explicitly taught about - falls back to the plain-text
-  // rectangular layout, not buildLargeWidget. Lock Screen accessory
-  // widgets only support text/symbols, not custom images or gradients;
-  // when Large's image-heavy content got force-fed into one (because the
-  // exact family string didn't match what was expected here), iOS
-  // couldn't render it and fell back to a broken, monochrome-tinted mess.
-  // A safe, always-fits text layout as the fallback avoids that outcome
-  // regardless of which exact string a given iOS version reports.
-  return buildAccessoryRectangularWidget(status);
+  if (config.widgetFamily === "small") return buildSmallWidget(status);
+  if (config.widgetFamily === "medium") return buildMediumWidget(status);
+  return buildLargeWidget(status);
 }
 
 function buildErrorWidget(message) {
