@@ -2,6 +2,8 @@ import type { DocumentReference } from 'firebase-admin/firestore';
 import type { ActiveTimerState } from '../../src/services/firebaseService';
 import type { AlignerSettings } from '../../src/types';
 
+export type RhythmSegmentState = 'worn' | 'out' | 'future';
+
 export interface WidgetStatusPayload {
   wearStatus: ActiveTimerState['wearStatus'];
   startTime: string | null;
@@ -9,6 +11,7 @@ export interface WidgetStatusPayload {
   wornSeconds: number;
   goalSeconds: number;
   outMinutesToday: number;
+  segments: RhythmSegmentState[];
 }
 
 /**
@@ -43,6 +46,39 @@ export function toLocalTime(utcNow: Date, tzOffsetMinutes: number): Date {
 }
 
 /**
+ * 24 hourly worn/out/future segments, mirroring
+ * HomeView.tsx#rhythmSegments exactly (same hour-overlap logic), just
+ * computed server-side from Firestore-shaped log data instead of React
+ * state, and using local hours derived from the caller's tzOffsetMinutes.
+ */
+function computeRhythmSegments(
+  todaysLogs: { type?: string; startTime?: string; endTime?: string }[],
+  activeTimer: ActiveTimerState,
+  tzOffsetMinutes: number,
+  currentHour: number
+): RhythmSegmentState[] {
+  const localHour = (iso: string) => toLocalTime(new Date(iso), tzOffsetMinutes).getUTCHours();
+
+  const outRanges: [number, number][] = [];
+  todaysLogs.forEach((log) => {
+    if (log.type === 'out' && log.startTime) {
+      const startH = localHour(log.startTime);
+      const endH = log.endTime ? localHour(log.endTime) : currentHour;
+      outRanges.push([startH, endH]);
+    }
+  });
+  if (activeTimer.wearStatus === 'out' && activeTimer.startTime) {
+    outRanges.push([localHour(activeTimer.startTime), currentHour]);
+  }
+
+  return Array.from({ length: 24 }, (_, h) => {
+    if (h > currentHour) return 'future';
+    const wasOut = outRanges.some(([s, e]) => h >= s && h <= e);
+    return wasOut ? 'out' : 'worn';
+  });
+}
+
+/**
  * Shared by widget-status.ts (a plain status GET) and telegram-webhook.ts's
  * /toggle handler (which returns this directly in its response so the
  * Scriptable widget gets fresh data in the same round trip as the toggle,
@@ -60,8 +96,11 @@ export async function computeWidgetStatus(
 
   const todaysLogsSnap = await planRef.collection('wearLogs').where('date', '==', todayStr).get();
   let outMinutesToday = 0;
+  const todaysLogs: { type?: string; startTime?: string; endTime?: string }[] = [];
   todaysLogsSnap.forEach((d) => {
-    outMinutesToday += d.data().durationMinutes || 0;
+    const data = d.data();
+    outMinutesToday += data.durationMinutes || 0;
+    todaysLogs.push({ type: data.type, startTime: data.startTime, endTime: data.endTime });
   });
 
   const isOut = activeTimer.wearStatus === 'out' && !!activeTimer.startTime;
@@ -75,6 +114,8 @@ export async function computeWidgetStatus(
   const wornMinutesToday = Math.max(0, trackedWindowMinutes - outMinutesToday);
   const wornSeconds = wornMinutesToday * 60;
 
+  const segments = computeRhythmSegments(todaysLogs, activeTimer, tzOffsetMinutes, localNow.getUTCHours());
+
   return {
     wearStatus: activeTimer.wearStatus,
     startTime: activeTimer.startTime ?? null,
@@ -82,5 +123,6 @@ export async function computeWidgetStatus(
     wornSeconds,
     goalSeconds,
     outMinutesToday,
+    segments,
   };
 }
