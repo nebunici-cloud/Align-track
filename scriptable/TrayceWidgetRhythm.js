@@ -76,9 +76,14 @@ function formatHm(totalSeconds) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function formatElapsedSince(iso) {
-  const ms = Date.now() - new Date(iso).getTime();
-  return formatHm(ms / 1000);
+// Device-local clock time (Scriptable runs on-device, so Date's own
+// local-time getters are already correct - no tzOffsetMinutes math needed
+// here, unlike the server side).
+function formatClockTime(iso) {
+  const d = new Date(iso);
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
 }
 
 async function fetchStatus() {
@@ -217,8 +222,21 @@ function drawPill(width, height, isOut) {
   ctx.setFillColor(new Color(colorBHex));
   ctx.fillPath();
 
+  // Icon + label are treated as one group and centered together, rather
+  // than pinning the icon near the left edge and letting the label sprawl
+  // across the remaining width (which left it visibly off-center). Scriptable's
+  // DrawContext has no text-measurement API, so label width is estimated
+  // from character count - fine for short, fixed, all-caps button labels.
   const badgeSize = height * 0.62;
-  const badgeX = radius - badgeSize / 2;
+  const iconTextGap = 10;
+  const labelText = isOut ? "PUT ALIGNERS IN" : "TAKE ALIGNERS OUT";
+  const labelFontSize = height * 0.32;
+  const estCharWidth = labelFontSize * 0.62;
+  const estLabelWidth = labelText.length * estCharWidth;
+  const groupWidth = badgeSize + iconTextGap + estLabelWidth;
+  const groupStartX = Math.max(radius * 0.6, (width - groupWidth) / 2);
+
+  const badgeX = groupStartX;
   const badgeY = (height - badgeSize) / 2;
   const badgePath = new Path();
   badgePath.addEllipse(new Rect(badgeX, badgeY, badgeSize, badgeSize));
@@ -228,14 +246,27 @@ function drawPill(width, height, isOut) {
 
   ctx.setTextAlignedCenter();
   ctx.setTextColor(new Color("#092337"));
-  ctx.setFont(Font.boldSystemFont(badgeSize * 0.62));
-  ctx.drawTextInRect(isOut ? "+" : "−", new Rect(badgeX, badgeY - height * 0.02, badgeSize, badgeSize));
+  ctx.setFont(Font.boldSystemFont(badgeSize * 0.56));
+  ctx.drawTextInRect(isOut ? "+" : "↗", new Rect(badgeX, badgeY - height * 0.02, badgeSize, badgeSize));
 
-  ctx.setFont(Font.boldSystemFont(height * 0.32));
-  const labelText = isOut ? "PUT ALIGNERS IN" : "TAKE ALIGNERS OUT";
-  ctx.drawTextInRect(labelText, new Rect(height, 0, width - height * 1.4, height));
+  ctx.setFont(Font.boldSystemFont(labelFontSize));
+  const labelX = badgeX + badgeSize + iconTextGap;
+  ctx.drawTextInRect(labelText, new Rect(labelX, 0, width - labelX, height));
 
   return ctx.getImage();
+}
+
+// Diagonal teal-glow-to-near-black background, matching the reference card.
+// LinearGradient is the only gradient type ListWidget.backgroundGradient
+// supports (no radial option), so a true radial glow is approximated with
+// a diagonal linear gradient plus a middle color stop to soften the falloff.
+function buildBackgroundGradient() {
+  const gradient = new LinearGradient();
+  gradient.locations = [0, 0.45, 1];
+  gradient.colors = [new Color("#1d6e67"), new Color("#0a2530"), new Color("#050c12")];
+  gradient.startPoint = new Point(1, 0);
+  gradient.endPoint = new Point(0, 1);
+  return gradient;
 }
 
 function drawAccentRing(size) {
@@ -273,7 +304,7 @@ function buildWidget(status) {
   // number, 24 bars, axis labels, status line, pill) does not fit Small or
   // Medium.
   const widget = new ListWidget();
-  widget.backgroundColor = COLORS.surfaceCard;
+  widget.backgroundGradient = buildBackgroundGradient();
   const horizontalPadding = 18;
   widget.setPadding(18, horizontalPadding, 16, horizontalPadding);
   const contentWidth = getContentWidth(horizontalPadding);
@@ -310,20 +341,21 @@ function buildWidget(status) {
 
   widget.addSpacer(12);
 
+  const stateColor = isOut ? COLORS.accentSand : COLORS.brandTeal;
   const statusRow = widget.addStack();
   statusRow.centerAlignContent();
   const dot = statusRow.addText("●");
   dot.font = Font.systemFont(12);
-  dot.textColor = isOut ? COLORS.accentSand : COLORS.brandTeal;
+  dot.textColor = stateColor;
   statusRow.addSpacer(6);
   const statusLabel = statusRow.addText(isOut ? "Aligners out" : "Aligners in");
   statusLabel.font = Font.boldSystemFont(15);
-  statusLabel.textColor = COLORS.textPrimary;
-  if (isOut) {
+  statusLabel.textColor = stateColor;
+  if (status.sinceIso) {
     statusRow.addSpacer(4);
-    const elapsedText = statusRow.addText(`· ${formatElapsedSince(status.startTime)}`);
-    elapsedText.font = Font.systemFont(15);
-    elapsedText.textColor = COLORS.textSecondary;
+    const sinceText = statusRow.addText(`· since ${formatClockTime(status.sinceIso)}`);
+    sinceText.font = Font.systemFont(15);
+    sinceText.textColor = COLORS.textSecondary;
   }
   statusRow.addSpacer();
 

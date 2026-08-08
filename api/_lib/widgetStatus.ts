@@ -12,6 +12,14 @@ export interface WidgetStatusPayload {
   goalSeconds: number;
   outMinutesToday: number;
   segments: RhythmSegmentState[];
+  /**
+   * When the current state began: the active out-session's start while
+   * out, or the most recent today's-log endTime (when the last out-session
+   * ended) while in - mirrors HomeView.tsx's stateSinceLabel. Null if
+   * there's nothing today to anchor it to (e.g. still "in" with no
+   * completed out-session yet today).
+   */
+  sinceIso: string | null;
 }
 
 /**
@@ -116,6 +124,18 @@ export async function computeWidgetStatus(
 
   const segments = computeRhythmSegments(todaysLogs, activeTimer, tzOffsetMinutes, localNow.getUTCHours());
 
+  let sinceIso: string | null = null;
+  if (isOut) {
+    sinceIso = activeTimer.startTime ?? null;
+  } else {
+    for (const log of todaysLogs) {
+      if (!log.endTime) continue;
+      if (!sinceIso || new Date(log.endTime).getTime() > new Date(sinceIso).getTime()) {
+        sinceIso = log.endTime;
+      }
+    }
+  }
+
   return {
     wearStatus: activeTimer.wearStatus,
     startTime: activeTimer.startTime ?? null,
@@ -124,5 +144,6 @@ export async function computeWidgetStatus(
     goalSeconds,
     outMinutesToday,
     segments,
+    sinceIso,
   };
 }
