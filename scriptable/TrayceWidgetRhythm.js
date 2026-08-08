@@ -125,7 +125,10 @@ function drawRhythmBars(width, height, segments) {
   const stateHex = { worn: HEX.brandTeal, out: HEX.accentSand, future: HEX.stateInactive };
 
   segments.forEach((state, i) => {
-    const brightness = 0.82 + 0.32 * (i / (barCount - 1));
+    // Wider range than the web app's subtle CSS filter (0.82-1.14) - at
+    // ~10pt bar width that subtle a ramp barely reads, so this leans
+    // harder into it for a visibly graduated look matching the mockup.
+    const brightness = 0.62 + 0.65 * (i / (barCount - 1));
     const color = applyBrightness(stateHex[state] || HEX.stateInactive, brightness);
     const x = i * (barWidth + gap);
     const path = new Path();
@@ -159,7 +162,11 @@ function drawPill(width, height, isOut) {
   ctx.setFillColor(new Color(colorAHex));
   ctx.fillPath();
 
-  const steps = 40;
+  // Fewer, generously-overlapping strips (2x width, later ones painted on
+  // top) rather than many hairline-adjacent ones - thin abutting rects
+  // left faint antialiased seams between them that, repeated dozens of
+  // times, visibly washed out the whole gradient toward the background.
+  const steps = 16;
   const bandWidth = Math.max(0, width - height);
   const stepWidth = bandWidth / steps;
   for (let i = 0; i < steps; i++) {
@@ -167,7 +174,7 @@ function drawPill(width, height, isOut) {
     const color = lerpColor(colorAHex, colorBHex, t);
     const x = radius + i * stepWidth;
     const rectPath = new Path();
-    rectPath.addRect(new Rect(x, 0, stepWidth + 1, height));
+    rectPath.addRect(new Rect(x, 0, stepWidth * 2, height));
     ctx.addPath(rectPath);
     ctx.setFillColor(color);
     ctx.fillPath();
