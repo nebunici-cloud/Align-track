@@ -82,9 +82,12 @@ async function fetchStatus() {
 // Posts the exact same synthetic Telegram-update shape the /out, /in, and
 // /toggle Shortcuts already send to the bot webhook - straight to the bot,
 // no Shortcuts app involved. Mirrors telegram-webhook.ts's parsing of
-// update.message.chat.id / update.message.text.
+// update.message.chat.id / update.message.text. Passing tzOffsetMinutes
+// makes the webhook hand back the freshly-toggled status in THIS response,
+// so the widget can redraw immediately without a second GET round trip.
 async function performToggle() {
-  const url = `${CONFIG.apiBase}/api/telegram-webhook`;
+  const tzOffsetMinutes = new Date().getTimezoneOffset();
+  const url = `${CONFIG.apiBase}/api/telegram-webhook?tzOffsetMinutes=${tzOffsetMinutes}`;
   const req = new Request(url);
   req.method = "POST";
   req.headers = {
@@ -95,10 +98,11 @@ async function performToggle() {
     message: { chat: { id: Number(CONFIG.chatId) }, text: "/toggle" },
   });
   req.timeoutInterval = 10;
-  await req.load();
+  const json = await req.loadJSON();
   if (req.response && req.response.statusCode >= 400) {
-    throw new Error(`Toggle failed: HTTP ${req.response.statusCode}`);
+    throw new Error((json && json.error) || `Toggle failed: HTTP ${req.response.statusCode}`);
   }
+  return json;
 }
 
 // Draws the progress ring AND the centered "20h 19m" label into one bitmap,
@@ -236,22 +240,14 @@ function buildErrorWidget(message) {
 
 async function run() {
   // config.runsInWidget is only true for the OS's own background timeline
-  // refresh. Any other run (a Home Screen tap with "Run Script", or a
-  // manual ▶️ in the editor) means the user wants to toggle - do that
-  // first, then always show the freshest status either way.
-  if (!config.runsInWidget) {
-    try {
-      await performToggle();
-    } catch (err) {
-      Script.setWidget(buildErrorWidget(err.message || String(err)));
-      Script.complete();
-      return;
-    }
-  }
-
+  // refresh - that path just displays the latest status. Any other run (a
+  // Home Screen tap with "Run Script", or a manual ▶️ in the editor) means
+  // the user wants to toggle; performToggle() returns the freshly-toggled
+  // status directly (one round trip), so the redraw doesn't need a second
+  // separate status fetch.
   let widget;
   try {
-    const status = await fetchStatus();
+    const status = config.runsInWidget ? await fetchStatus() : await performToggle();
     widget = buildWidget(status);
   } catch (err) {
     widget = buildErrorWidget(err.message || String(err));

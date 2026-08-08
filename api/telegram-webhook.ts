@@ -3,7 +3,8 @@ import type { Firestore, DocumentReference } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminDb } from './_lib/firebaseAdmin.js';
 import { sendMessage, formatElapsed } from './_lib/telegram.js';
-import type { OutReason, WearLog } from '../src/types';
+import { computeWidgetStatus } from './_lib/widgetStatus.js';
+import type { OutReason, WearLog, AlignerSettings } from '../src/types';
 import type { ActiveTimerState } from '../src/services/firebaseService';
 
 const LINK_CODE_TTL_MS = 15 * 60 * 1000;
@@ -211,6 +212,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const metaRef = planRef.collection('meta').doc('main');
     const metaSnap = await metaRef.get();
     const meta = metaSnap.data() || {};
+    const settings: AlignerSettings | undefined = meta.settings;
     const activeTimer: ActiveTimerState = meta.activeTimer || {
       wearStatus: 'in',
       startTime: null,
@@ -295,6 +297,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } else {
         await performOut(planRef, metaRef, chatId, activeTimer, argsText);
       }
+
+      // tzOffsetMinutes only ever arrives from the Scriptable widget's
+      // direct POST (never from a real Telegram tap) - when present, hand
+      // back the freshly-computed status in this same response so the
+      // widget can redraw without a second round trip.
+      const tzOffsetParam = req.query.tzOffsetMinutes;
+      const tzOffsetRaw = Array.isArray(tzOffsetParam) ? tzOffsetParam[0] : tzOffsetParam;
+      if (tzOffsetRaw !== undefined) {
+        const freshMetaSnap = await metaRef.get();
+        const freshActiveTimer: ActiveTimerState = freshMetaSnap.data()?.activeTimer || activeTimer;
+        const payload = await computeWidgetStatus(planRef, freshActiveTimer, settings, parseInt(tzOffsetRaw, 10) || 0);
+        res.status(200).json(payload);
+        return;
+      }
+
       res.status(200).send('ok');
       return;
     }
