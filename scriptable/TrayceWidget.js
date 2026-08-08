@@ -224,11 +224,13 @@ async function run() {
     widget = buildErrorWidget(err.message || String(err));
   }
 
-  if (config.runsInWidget) {
-    Script.setWidget(widget);
-  } else {
-    await widget.presentSmall();
-  }
+  // Always just hand the widget to Script.setWidget() and finish - no
+  // presentSmall() call. A Home Screen tap configured as "Run Script" runs
+  // this exact code path (not config.runsInWidget), so calling
+  // presentSmall() there visibly opened Scriptable's UI before it then
+  // followed widget.url - a jarring extra hop on every tap. Scriptable's
+  // own size-preview tabs in the editor cover manual testing instead.
+  Script.setWidget(widget);
   Script.complete();
 }
 
