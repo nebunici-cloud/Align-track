@@ -10,12 +10,15 @@
 //      - chatId: your Telegram chat id (same one your /link CODE used).
 //      - widgetSecret: the SAME secret you already put in your /out, /in,
 //        or /toggle Shortcut's headers (TELEGRAM_WEBHOOK_SECRET in Vercel).
-// 4. Long-press the Home Screen -> + -> Scriptable -> pick the SMALL,
-//    MEDIUM, or LARGE widget size (this script renders a different,
-//    size-appropriate layout for each via config.widgetFamily) -> add it
-//    -> long-press the widget -> Edit Widget -> set "Script" to
-//    TrayceWidgetRhythm. You can add multiple sizes at once, each showing
-//    the layout that fits it - one script, no separate scripts per size.
+// 4. For a Home Screen widget: long-press the Home Screen -> + ->
+//    Scriptable -> pick SMALL, MEDIUM, or LARGE -> add it -> long-press
+//    the widget -> Edit Widget -> set "Script" to TrayceWidgetRhythm.
+//    For a Lock Screen widget: long-press the Lock Screen -> Customize ->
+//    Lock Screen -> tap a widget slot -> Scriptable -> pick a style ->
+//    set "Script" to TrayceWidgetRhythm the same way. This one script
+//    renders a different, size-appropriate layout for every family via
+//    config.widgetFamily - add as many sizes/slots as you want, all
+//    staying in sync automatically.
 // 5. Tapping the widget posts a synthetic "/toggle" straight to the bot's
 //    webhook, same as TrayceWidget.js - Scriptable briefly opens to run
 //    the script (unavoidable for a "Run Script" widget), but no other app
@@ -601,7 +604,68 @@ function buildMediumWidget(status) {
   return widget;
 }
 
+// Lock Screen widgets ("accessory" families) are a different world from
+// Home Screen ones: iOS renders them itself in a monochrome vibrancy
+// style, ignoring custom colors/gradients/backgrounds entirely - so these
+// are plain white text only, no drawn bars/pill/gradient. Tapping still
+// runs this same script (same toggle-on-tap behavior as the other sizes,
+// since run() dispatches on config.runsInWidget, not widget family).
+function buildAccessoryRectangularWidget(status) {
+  const widget = new ListWidget();
+  const isOut = status.wearStatus === "out" && !!status.startTime;
+
+  const bigNumber = widget.addText(formatHm(status.wornSeconds));
+  bigNumber.font = Font.boldSystemFont(20);
+  bigNumber.textColor = Color.white();
+
+  widget.addSpacer(2);
+
+  const stateText = status.sinceIso
+    ? `${isOut ? "Out" : "In"} since ${formatClockTime(status.sinceIso)}`
+    : isOut
+    ? "Out"
+    : "In";
+  const stateLabel = widget.addText(stateText);
+  stateLabel.font = Font.systemFont(13);
+  stateLabel.textColor = Color.white();
+
+  widget.refreshAfterDate = new Date(Date.now() + (isOut ? 5 : 20) * 60 * 1000);
+  return widget;
+}
+
+function buildAccessoryCircularWidget(status) {
+  const widget = new ListWidget();
+  widget.setPadding(2, 2, 2, 2);
+  const isOut = status.wearStatus === "out" && !!status.startTime;
+  const totalMinutes = Math.max(0, Math.round(status.wornSeconds / 60));
+
+  const hLine = widget.addText(`${Math.floor(totalMinutes / 60)}h`);
+  hLine.font = Font.boldSystemFont(15);
+  hLine.textColor = Color.white();
+  hLine.centerAlignText();
+
+  const mLine = widget.addText(`${totalMinutes % 60}m`);
+  mLine.font = Font.systemFont(11);
+  mLine.textColor = Color.white();
+  mLine.centerAlignText();
+
+  widget.refreshAfterDate = new Date(Date.now() + (isOut ? 5 : 20) * 60 * 1000);
+  return widget;
+}
+
+function buildAccessoryInlineWidget(status) {
+  const widget = new ListWidget();
+  const isOut = status.wearStatus === "out" && !!status.startTime;
+  const line = widget.addText(`🦷 ${formatHm(status.wornSeconds)} · ${isOut ? "Out" : "In"}`);
+  line.textColor = Color.white();
+  widget.refreshAfterDate = new Date(Date.now() + (isOut ? 5 : 20) * 60 * 1000);
+  return widget;
+}
+
 function buildWidget(status) {
+  if (config.widgetFamily === "accessoryRectangular") return buildAccessoryRectangularWidget(status);
+  if (config.widgetFamily === "accessoryCircular") return buildAccessoryCircularWidget(status);
+  if (config.widgetFamily === "accessoryInline") return buildAccessoryInlineWidget(status);
   if (config.widgetFamily === "small") return buildSmallWidget(status);
   if (config.widgetFamily === "medium") return buildMediumWidget(status);
   return buildLargeWidget(status);
