@@ -20,6 +20,11 @@ export interface WidgetStatusPayload {
    * completed out-session yet today).
    */
   sinceIso: string | null;
+  currentTray: number;
+  totalTrays: number;
+  /** Clamped to trayDurationDays, mirroring HomeView.tsx's trayDayNumber. */
+  trayDayNumber: number;
+  trayDurationDays: number;
 }
 
 /**
@@ -51,6 +56,27 @@ function getAvailableMinutesToday(settings: AlignerSettings | undefined, todaySt
  */
 export function toLocalTime(utcNow: Date, tzOffsetMinutes: number): Date {
   return new Date(utcNow.getTime() - tzOffsetMinutes * 60000);
+}
+
+/** Mirrors src/types.ts#getTrayDuration. */
+function getTrayDuration(settings: AlignerSettings | undefined, trayNumber: number): number {
+  if (settings?.customTrayDurations && settings.customTrayDurations[trayNumber] !== undefined) {
+    return settings.customTrayDurations[trayNumber];
+  }
+  return settings?.trayDurationDays || 7;
+}
+
+/**
+ * Mirrors src/utils/storage.ts#getDayNumberSince, using the caller's local
+ * "today" (already computed via toLocalTime upstream) instead of the
+ * browser's own local Date.
+ */
+function getTrayDayNumberSince(trayStartDate: string, todayStr: string): number {
+  const startDateStr = trayStartDate.slice(0, 10);
+  const startMidnight = new Date(`${startDateStr}T00:00:00`).getTime();
+  const todayMidnight = new Date(`${todayStr}T00:00:00`).getTime();
+  const daysElapsed = Math.round((todayMidnight - startMidnight) / 86400000);
+  return Math.max(1, daysElapsed + 1);
 }
 
 /**
@@ -136,6 +162,13 @@ export async function computeWidgetStatus(
     }
   }
 
+  const currentTray = settings?.currentTray ?? 1;
+  const totalTrays = settings?.totalTrays ?? 1;
+  const trayDurationDays = getTrayDuration(settings, currentTray);
+  const trayDayNumber = settings?.trayStartDate
+    ? Math.min(trayDurationDays, getTrayDayNumberSince(settings.trayStartDate, todayStr))
+    : 1;
+
   return {
     wearStatus: activeTimer.wearStatus,
     startTime: activeTimer.startTime ?? null,
@@ -145,5 +178,9 @@ export async function computeWidgetStatus(
     outMinutesToday,
     segments,
     sinceIso,
+    currentTray,
+    totalTrays,
+    trayDayNumber,
+    trayDurationDays,
   };
 }

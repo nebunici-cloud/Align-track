@@ -524,17 +524,30 @@ function buildMediumWidget(status) {
   const wordmarkRow = left.addStack();
   wordmarkRow.topAlignContent();
   const wordmark = wordmarkRow.addText("trayce");
-  wordmark.font = Font.systemFont(14);
+  wordmark.font = Font.systemFont(13);
   wordmark.textColor = COLORS.textPrimary;
   wordmarkRow.addSpacer(3);
-  const accentImg = wordmarkRow.addImage(drawAccentRing(16));
-  accentImg.imageSize = new Size(7, 7);
+  const accentImg = wordmarkRow.addImage(drawAccentRing(15));
+  accentImg.imageSize = new Size(6.5, 6.5);
   wordmarkRow.addSpacer();
 
-  left.addSpacer(6);
+  left.addSpacer(2);
+
+  // One real text element (not split across stack children), so if it
+  // wraps on the narrowest devices it wraps cleanly at word boundaries
+  // rather than reproducing the earlier multi-element jumbling bug. Added
+  // on top of what fit before, so several nearby sizes/gaps were trimmed
+  // to make room without overflowing the shortest device tier.
+  const trayLine = left.addText(
+    `Tray ${status.currentTray} of ${status.totalTrays} • Day ${status.trayDayNumber} of ${status.trayDurationDays}`
+  );
+  trayLine.font = Font.systemFont(7.5);
+  trayLine.textColor = COLORS.textSecondary;
+
+  left.addSpacer(3);
 
   const bigNumber = left.addText(formatHm(status.wornSeconds));
-  bigNumber.font = Font.heavySystemFont(28);
+  bigNumber.font = Font.heavySystemFont(26);
   bigNumber.textColor = COLORS.textPrimary;
 
   const wornLabel = left.addText("WORN TODAY");
@@ -543,21 +556,22 @@ function buildMediumWidget(status) {
 
   left.addSpacer();
 
-  // Two lines rather than one horizontal row: "Aligners out · since HH:MM"
-  // didn't fit the ~105pt left column on one line, so Scriptable wrapped
-  // the individual text elements mid-phrase into a jumbled multi-line mess.
+  // Two lines rather than one horizontal row: even the shorter "Out since
+  // HH:MM" risks not fitting the ~93-113pt left column on one line at the
+  // narrowest device tier, and Scriptable wraps multiple text elements in
+  // one row mid-phrase into a jumbled mess rather than cleanly - splitting
+  // it ourselves avoids that regardless of exact column width.
   const statusRow = left.addStack();
   statusRow.centerAlignContent();
   const dot = statusRow.addText("●");
   dot.font = Font.systemFont(9);
   dot.textColor = stateColor;
   statusRow.addSpacer(4);
-  const statusLabel = statusRow.addText(isOut ? "Aligners out" : "Aligners in");
+  const statusLabel = statusRow.addText(isOut ? "Out" : "In");
   statusLabel.font = Font.boldSystemFont(10.5);
   statusLabel.textColor = stateColor;
 
   if (status.sinceIso) {
-    left.addSpacer(1);
     const sinceRow = left.addStack();
     sinceRow.addSpacer(13); // roughly indents under the label, past the dot
     const sinceText = sinceRow.addText(`since ${formatClockTime(status.sinceIso)}`);
@@ -565,7 +579,7 @@ function buildMediumWidget(status) {
     sinceText.textColor = COLORS.textSecondary;
   }
 
-  left.addSpacer(3);
+  left.addSpacer(2);
 
   const totalRow = left.addStack();
   totalRow.centerAlignContent();
