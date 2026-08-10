@@ -339,56 +339,88 @@ function buildLargeWidget(status) {
   // few points, nowhere near this.
   wordmarkRow.topAlignContent();
   const wordmark = wordmarkRow.addText("trayce");
-  wordmark.font = Font.systemFont(26);
+  wordmark.font = Font.systemFont(24);
   wordmark.textColor = COLORS.textPrimary;
   wordmarkRow.addSpacer(4);
-  const accentImg = wordmarkRow.addImage(drawAccentRing(24));
-  accentImg.imageSize = new Size(11, 11);
+  const accentImg = wordmarkRow.addImage(drawAccentRing(22));
+  accentImg.imageSize = new Size(10, 10);
   wordmarkRow.addSpacer();
 
-  widget.addSpacer(14);
+  widget.addSpacer(4);
+
+  // Same content as buildMediumWidget's left column (tray/day line, "WORN
+  // TODAY", "Total out today"), stacked in one column instead of two -
+  // several sizes/gaps below are tighter than a first pass would use, to
+  // fit the extra lines without overflowing the frame (Large has no
+  // explicit height budget the way Medium/Small do; content that runs
+  // long just gets silently clipped by iOS instead of erroring).
+  const trayLine = widget.addText(
+    `Tray ${status.currentTray} of ${status.totalTrays} • Day ${status.trayDayNumber} of ${status.trayDurationDays}`
+  );
+  trayLine.font = Font.systemFont(12);
+  trayLine.textColor = COLORS.textSecondary;
+
+  widget.addSpacer(10);
 
   const isOut = status.wearStatus === "out" && !!status.startTime;
   const bigNumber = widget.addText(formatHm(status.wornSeconds));
-  bigNumber.font = Font.heavySystemFont(44);
+  bigNumber.font = Font.heavySystemFont(42);
   bigNumber.textColor = COLORS.textPrimary;
+
+  const wornLabel = widget.addText("WORN TODAY");
+  wornLabel.font = Font.boldSystemFont(10.5);
+  wornLabel.textColor = COLORS.textSecondary;
+
+  widget.addSpacer(10);
+
+  const label = widget.addText("TODAY'S RHYTHM");
+  label.font = Font.boldSystemFont(10.5);
+  label.textColor = COLORS.textSecondary;
 
   widget.addSpacer(6);
 
-  const label = widget.addText("TODAY'S RHYTHM");
-  label.font = Font.boldSystemFont(11);
-  label.textColor = COLORS.textSecondary;
-
-  widget.addSpacer(8);
-
-  const barsHeight = 78;
+  const barsHeight = 62;
   const barsImage = drawRhythmBars(contentWidth, barsHeight, status.segments || []);
   const barsElement = widget.addImage(barsImage);
   barsElement.imageSize = new Size(contentWidth, barsImage.size.height);
 
-  widget.addSpacer(12);
+  widget.addSpacer(8);
 
+  // "In"/"Out" and "since HH:MM" on one row, matching buildMediumWidget's
+  // wording (shorter than the old "Aligners out · since HH:MM").
   const stateColor = isOut ? COLORS.accentSand : COLORS.brandTeal;
   const statusRow = widget.addStack();
   statusRow.centerAlignContent();
   const dot = statusRow.addText("●");
-  dot.font = Font.systemFont(12);
+  dot.font = Font.systemFont(11);
   dot.textColor = stateColor;
   statusRow.addSpacer(6);
-  const statusLabel = statusRow.addText(isOut ? "Aligners out" : "Aligners in");
-  statusLabel.font = Font.boldSystemFont(15);
+  const statusLabel = statusRow.addText(isOut ? "Out" : "In");
+  statusLabel.font = Font.boldSystemFont(13.5);
   statusLabel.textColor = stateColor;
   if (status.sinceIso) {
     statusRow.addSpacer(4);
-    const sinceText = statusRow.addText(`· since ${formatClockTime(status.sinceIso)}`);
-    sinceText.font = Font.systemFont(15);
+    const sinceText = statusRow.addText(`since ${formatClockTime(status.sinceIso)}`);
+    sinceText.font = Font.systemFont(13.5);
     sinceText.textColor = COLORS.textSecondary;
   }
   statusRow.addSpacer();
 
-  widget.addSpacer(14);
+  widget.addSpacer(2);
 
-  const pillHeight = 52;
+  const totalRow = widget.addStack();
+  const totalLabel = totalRow.addText("Total out today");
+  totalLabel.font = Font.systemFont(12);
+  totalLabel.textColor = COLORS.textSecondary;
+  totalRow.addSpacer(4);
+  const totalValue = totalRow.addText(`· ${formatHmPadded(status.outMinutesToday || 0)}`);
+  totalValue.font = Font.boldSystemFont(12);
+  totalValue.textColor = COLORS.accentSand;
+  totalRow.addSpacer();
+
+  widget.addSpacer(10);
+
+  const pillHeight = 46;
   const pillBgImage = drawPillBackground(contentWidth, pillHeight, isOut);
   const pillContainer = widget.addStack();
   pillContainer.backgroundImage = pillBgImage;
