@@ -3,6 +3,7 @@ import type { ActiveTimerState } from '../../src/services/firebaseService';
 import type { AlignerSettings } from '../../src/types';
 
 export type RhythmSegmentState = 'worn' | 'out' | 'future';
+export type ComplianceBand = 'onTrack' | 'atRisk' | 'missed' | 'none';
 
 export interface WidgetStatusPayload {
   wearStatus: ActiveTimerState['wearStatus'];
@@ -25,6 +26,30 @@ export interface WidgetStatusPayload {
   /** Clamped to trayDurationDays, mirroring HomeView.tsx's trayDayNumber. */
   trayDayNumber: number;
   trayDurationDays: number;
+  /**
+   * Today's raw out-intervals (endIso null = still ongoing), for a
+   * minute-accurate continuous timeline rather than 24 hourly buckets.
+   * Client converts to local minutes-of-day itself (same as
+   * formatClockTime already does) since the device's own Date getters are
+   * timezone-correct there for free, unlike on the server.
+   */
+  intervals: { startIso: string; endIso: string | null }[];
+  /** outRemaining = allowedOutMinutes - outMinutesToday; see computeBand. */
+  allowedOutMinutes: number;
+  /** Oldest first, ending with today. */
+  last7Days: { dateStr: string; band: ComplianceBand }[];
+}
+
+/**
+ * onTrack / atRisk / missed thresholds, shared between today's live band
+ * and each day in the 7-day history row so they mean the same thing
+ * everywhere.
+ */
+export function computeBand(outMinutes: number, allowedOutMinutes: number): ComplianceBand {
+  const outRemaining = allowedOutMinutes - outMinutes;
+  if (outRemaining > 30) return 'onTrack';
+  if (outRemaining > 0) return 'atRisk';
+  return 'missed';
 }
 
 /**
@@ -181,6 +206,18 @@ export async function computeWidgetStatus(
     ? Math.min(trayDurationDays, getTrayDayNumberSince(settings.trayStartDate, todayStr, tzOffsetMinutes))
     : 1;
 
+  const intervals: { startIso: string; endIso: string | null }[] = todaysLogs
+    .filter((log) => log.type === 'out' && log.startTime)
+    .map((log) => ({ startIso: log.startTime as string, endIso: log.endTime ?? null }));
+  if (isOut && activeTimer.startTime) {
+    intervals.push({ startIso: activeTimer.startTime, endIso: null });
+  }
+
+  const dailyTargetHours = settings?.dailyTargetHours ?? 22;
+  const allowedOutMinutes = (24 - dailyTargetHours) * 60;
+
+  const last7Days = await computeLast7DaysCompliance(planRef, settings, todayStr, allowedOutMinutes, outMinutesToday);
+
   return {
     wearStatus: activeTimer.wearStatus,
     startTime: activeTimer.startTime ?? null,
@@ -194,5 +231,56 @@ export async function computeWidgetStatus(
     totalTrays,
     trayDayNumber,
     trayDurationDays,
+    intervals,
+    allowedOutMinutes,
+    last7Days,
   };
+}
+
+/**
+ * Per-day compliance band for the last 7 calendar days (today inclusive),
+ * for the Large widget's seven-day row. A single range query on `date`
+ * covers all 7 days; today's bucket uses the already-computed
+ * outMinutesToday (which includes the live in-progress session) rather
+ * than re-deriving it from completed log documents only. Days before the
+ * user's plan started are 'none' rather than a misleadingly-perfect
+ * onTrack.
+ */
+async function computeLast7DaysCompliance(
+  planRef: DocumentReference,
+  settings: AlignerSettings | undefined,
+  todayStr: string,
+  allowedOutMinutes: number,
+  outMinutesToday: number
+): Promise<{ dateStr: string; band: ComplianceBand }[]> {
+  const todayMidnight = new Date(`${todayStr}T00:00:00`).getTime();
+  const dateStrs: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    dateStrs.push(new Date(todayMidnight - i * 86400000).toISOString().slice(0, 10));
+  }
+  const earliestStr = dateStrs[0];
+
+  const planStartStr = settings?.planStartDate || (settings?.trayStartDate ? settings.trayStartDate.slice(0, 10) : todayStr);
+
+  const outMinutesByDate: Record<string, number> = {};
+  if (earliestStr < todayStr) {
+    const rangeSnap = await planRef
+      .collection('wearLogs')
+      .where('date', '>=', earliestStr)
+      .where('date', '<', todayStr)
+      .get();
+    rangeSnap.forEach((d) => {
+      const data = d.data();
+      const dateStr: string | undefined = data.date;
+      if (!dateStr) return;
+      outMinutesByDate[dateStr] = (outMinutesByDate[dateStr] || 0) + (data.durationMinutes || 0);
+    });
+  }
+  outMinutesByDate[todayStr] = outMinutesToday;
+
+  return dateStrs.map((dateStr) => {
+    if (dateStr < planStartStr) return { dateStr, band: 'none' as ComplianceBand };
+    const outMinutes = outMinutesByDate[dateStr] || 0;
+    return { dateStr, band: computeBand(outMinutes, allowedOutMinutes) };
+  });
 }
