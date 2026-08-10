@@ -542,7 +542,7 @@ function buildMediumWidget(status) {
   trayLine.font = Font.systemFont(7.5);
   trayLine.textColor = COLORS.textSecondary;
 
-  left.addSpacer(9);
+  left.addSpacer(15);
 
   const bigNumber = left.addText(formatHm(status.wornSeconds));
   bigNumber.font = Font.heavySystemFont(26);
