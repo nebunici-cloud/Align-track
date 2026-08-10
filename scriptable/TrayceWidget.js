@@ -258,6 +258,13 @@ async function run() {
   }
 
   Script.setWidget(widget);
+  // A tap ("Run Script") briefly opens Scriptable to execute this file -
+  // App.close() collapses it back immediately once the toggle/redraw is
+  // done, instead of leaving the app sitting open until the user backs
+  // out manually.
+  if (!config.runsInWidget) {
+    App.close();
+  }
   Script.complete();
 }
 
