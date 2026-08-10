@@ -524,27 +524,25 @@ function buildMediumWidget(status) {
   const wordmarkRow = left.addStack();
   wordmarkRow.topAlignContent();
   const wordmark = wordmarkRow.addText("trayce");
-  wordmark.font = Font.systemFont(13);
+  wordmark.font = Font.systemFont(15);
   wordmark.textColor = COLORS.textPrimary;
   wordmarkRow.addSpacer(3);
-  const accentImg = wordmarkRow.addImage(drawAccentRing(15));
-  accentImg.imageSize = new Size(6.5, 6.5);
+  const accentImg = wordmarkRow.addImage(drawAccentRing(16));
+  accentImg.imageSize = new Size(7, 7);
   wordmarkRow.addSpacer();
 
-  left.addSpacer(2);
+  left.addSpacer(3);
 
   // One real text element (not split across stack children), so if it
   // wraps on the narrowest devices it wraps cleanly at word boundaries
-  // rather than reproducing the earlier multi-element jumbling bug. Added
-  // on top of what fit before, so several nearby sizes/gaps were trimmed
-  // to make room without overflowing the shortest device tier.
+  // rather than reproducing the earlier multi-element jumbling bug.
   const trayLine = left.addText(
     `Tray ${status.currentTray} of ${status.totalTrays} • Day ${status.trayDayNumber} of ${status.trayDurationDays}`
   );
   trayLine.font = Font.systemFont(7.5);
   trayLine.textColor = COLORS.textSecondary;
 
-  left.addSpacer(3);
+  left.addSpacer(9);
 
   const bigNumber = left.addText(formatHm(status.wornSeconds));
   bigNumber.font = Font.heavySystemFont(26);
@@ -556,11 +554,9 @@ function buildMediumWidget(status) {
 
   left.addSpacer();
 
-  // Two lines rather than one horizontal row: even the shorter "Out since
-  // HH:MM" risks not fitting the ~93-113pt left column on one line at the
-  // narrowest device tier, and Scriptable wraps multiple text elements in
-  // one row mid-phrase into a jumbled mess rather than cleanly - splitting
-  // it ourselves avoids that regardless of exact column width.
+  // "In"/"Out" and "since HH:MM" on one row now that the label dropped
+  // "Aligners" - short enough to fit the left column without reproducing
+  // the earlier multi-element wrapping bug that came from a longer phrase.
   const statusRow = left.addStack();
   statusRow.centerAlignContent();
   const dot = statusRow.addText("●");
@@ -570,11 +566,9 @@ function buildMediumWidget(status) {
   const statusLabel = statusRow.addText(isOut ? "Out" : "In");
   statusLabel.font = Font.boldSystemFont(10.5);
   statusLabel.textColor = stateColor;
-
   if (status.sinceIso) {
-    const sinceRow = left.addStack();
-    sinceRow.addSpacer(13); // roughly indents under the label, past the dot
-    const sinceText = sinceRow.addText(`since ${formatClockTime(status.sinceIso)}`);
+    statusRow.addSpacer(3);
+    const sinceText = statusRow.addText(`since ${formatClockTime(status.sinceIso)}`);
     sinceText.font = Font.systemFont(10.5);
     sinceText.textColor = COLORS.textSecondary;
   }
