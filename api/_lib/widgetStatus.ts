@@ -70,9 +70,21 @@ function getTrayDuration(settings: AlignerSettings | undefined, trayNumber: numb
  * Mirrors src/utils/storage.ts#getDayNumberSince, using the caller's local
  * "today" (already computed via toLocalTime upstream) instead of the
  * browser's own local Date.
+ *
+ * trayStartDate is a UTC ISO timestamp - slicing its first 10 characters
+ * directly (as an earlier version of this did) reads the UTC calendar
+ * date, not the local one. If the tray was started late in the evening
+ * local time, UTC has already rolled to the next day (or hasn't yet
+ * rolled from the previous one for negative offsets), throwing the day
+ * count off by one - exactly the "app says Day 14, widget says Day 15"
+ * bug this fixes. The client's getDayNumberSince avoids this for free
+ * since `new Date(startDateInput)` + local getters are already
+ * timezone-correct in a browser; the server has no such luxury and must
+ * shift to local time explicitly first, same as every other timestamp
+ * this file handles.
  */
-function getTrayDayNumberSince(trayStartDate: string, todayStr: string): number {
-  const startDateStr = trayStartDate.slice(0, 10);
+function getTrayDayNumberSince(trayStartDate: string, todayStr: string, tzOffsetMinutes: number): number {
+  const startDateStr = toLocalTime(new Date(trayStartDate), tzOffsetMinutes).toISOString().slice(0, 10);
   const startMidnight = new Date(`${startDateStr}T00:00:00`).getTime();
   const todayMidnight = new Date(`${todayStr}T00:00:00`).getTime();
   const daysElapsed = Math.round((todayMidnight - startMidnight) / 86400000);
@@ -166,7 +178,7 @@ export async function computeWidgetStatus(
   const totalTrays = settings?.totalTrays ?? 1;
   const trayDurationDays = getTrayDuration(settings, currentTray);
   const trayDayNumber = settings?.trayStartDate
-    ? Math.min(trayDurationDays, getTrayDayNumberSince(settings.trayStartDate, todayStr))
+    ? Math.min(trayDurationDays, getTrayDayNumberSince(settings.trayStartDate, todayStr, tzOffsetMinutes))
     : 1;
 
   return {
