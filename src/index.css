@@ -1,1 +1,47 @@
 @import "tailwindcss";
+
+/*
+ * Trayce Home redesign — scoped design tokens.
+ * These are only used inside the new Home screen + shared header/bottom-nav
+ * components (anything under a `.tz-scope` wrapper). The rest of the app
+ * keeps its existing hardcoded dark palette untouched, so light mode only
+ * affects the redesigned surfaces rather than the whole product.
+ */
+.tz-scope.tz-dark {
+  --tz-bg-canvas: #061624;
+  --tz-bg-canvas-alt: #0b2635;
+  --tz-surface-card: #102a41;
+  --tz-surface-card-deep: #0c2236;
+  --tz-border-subtle: #27506a;
+  --tz-text-primary: #f5f7f8;
+  --tz-text-secondary: #91a8ba;
+  --tz-brand-teal: #18bcae;
+  --tz-brand-mint: #80ddd0;
+  --tz-accent-sand: #f1bc5b;
+  /* Over-budget / missed state - distinct from sand's "running low" warning. */
+  --tz-accent-coral: #e8734f;
+  --tz-state-inactive: #38536a;
+  --tz-focus-ring: #9debe0;
+}
+
+.tz-scope.tz-light {
+  --tz-bg-canvas: #f3f8f6;
+  --tz-bg-canvas-alt: #e8f2ee;
+  --tz-surface-card: #ffffff;
+  --tz-surface-card-deep: #f8fbfa;
+  --tz-border-subtle: #c9ddda;
+  --tz-text-primary: #092337;
+  --tz-text-secondary: #617a89;
+  --tz-brand-teal: #13aa9e;
+  --tz-brand-mint: #69d2c4;
+  --tz-accent-sand: #d99b35;
+  /* Over-budget / missed state - distinct from sand's "running low" warning. */
+  --tz-accent-coral: #c4502c;
+  --tz-state-inactive: #d5e2e2;
+  --tz-focus-ring: #087f76;
+}
+
+.tz-scope {
+  background-color: var(--tz-bg-canvas);
+  color: var(--tz-text-primary);
+}

@@ -1,92 +1,77 @@
 {
   "entities": {
-    "UserSettings": {
-      "title": "UserSettings",
-      "description": "User aligner treatment settings and preferences",
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "A treatment profile (one per person/plan) tracked under a single Google account",
       "type": "object",
       "properties": {
-        "dailyTargetHours": { "type": "number" },
-        "currentTray": { "type": "number" },
-        "totalTrays": { "type": "number" },
-        "trayDurationDays": { "type": "number" },
-        "planStartDate": { "type": "string" },
-        "planStartTime": { "type": "string" },
-        "trayStartDate": { "type": "string" },
-        "preferredTrayChangeTime": { "type": "string" },
-        "orthodontistName": { "type": "string" },
-        "clinicName": { "type": "string" },
-        "doctorPhone": { "type": "string" },
-        "nextApptDate": { "type": "string" },
-        "nextApptTime": { "type": "string" },
-        "chewiesDailyTargetMinutes": { "type": "number" },
-        "useRubberBands": { "type": "boolean" },
-        "rubberBandsTargetPerDay": { "type": "number" },
-        "rubberBandsChangedToday": { "type": "number" },
-        "outTimerAlertMinutes": { "type": "number" },
-        "pushNotificationsEnabled": { "type": "boolean" },
-        "soundAlertsEnabled": { "type": "boolean" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "planType": { "type": "string" },
+        "avatarColor": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "PlanMeta": {
+      "title": "PlanMeta",
+      "description": "Settings, maintenance tasks, notifications, and active wear timer for one treatment plan",
+      "type": "object",
+      "properties": {
+        "settings": { "type": "object" },
+        "tasks": { "type": "array" },
+        "notifications": { "type": "array" },
+        "activeTimer": { "type": "object" },
         "updatedAt": { "type": "string" }
       }
     },
     "WearLog": {
       "title": "WearLog",
-      "description": "Wear/out logs for aligner tracking",
+      "description": "A single wear/out session for aligner tracking",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "trayNumber": { "type": "number" },
+        "date": { "type": "string" },
         "type": { "type": "string" },
-        "reason": { "type": "string" },
         "startTime": { "type": "string" },
         "endTime": { "type": "string" },
         "durationMinutes": { "type": "number" },
-        "notes": { "type": "string" },
-        "dateStr": { "type": "string" }
+        "reason": { "type": "string" },
+        "notes": { "type": "string" }
       }
     },
-    "MaintenanceTask": {
-      "title": "MaintenanceTask",
-      "description": "Daily maintenance tasks like cleaning aligners or chewies",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "completed": { "type": "boolean" },
-        "category": { "type": "string" },
-        "timeOfDay": { "type": "string" }
-      }
-    },
-    "DiaryEntry": {
-      "title": "DiaryEntry",
-      "description": "Smile diary photos and notes",
+    "PhotoEntry": {
+      "title": "PhotoEntry",
+      "description": "Smile diary photo metadata; the image itself lives in Firebase Storage",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "trayNumber": { "type": "number" },
         "date": { "type": "string" },
-        "photoUrl": { "type": "string" },
-        "notes": { "type": "string" },
-        "tightnessRating": { "type": "number" },
-        "painLevel": { "type": "number" }
+        "imageUrl": { "type": "string" },
+        "note": { "type": "string" }
       }
     }
   },
   "firestore": {
-    "/users/{userId}/settings/{settingId}": {
-      "schema": "UserSettings",
-      "description": "User aligner settings"
+    "/users/{userId}/profile/main": {
+      "description": "The account list (UserProfile[]) and currently selected accountId for this Google account"
     },
-    "/users/{userId}/wearLogs/{logId}": {
+    "/users/{userId}/plans/{accountId}/meta/main": {
+      "schema": "PlanMeta",
+      "description": "Bounded per-plan document: settings, tasks, notifications, active timer"
+    },
+    "/users/{userId}/plans/{accountId}/wearLogs/{logId}": {
       "schema": "WearLog",
-      "description": "User wear/out log items"
+      "description": "One document per wear/out session; unbounded, ordered by startTime"
     },
-    "/users/{userId}/tasks/{taskId}": {
-      "schema": "MaintenanceTask",
-      "description": "User daily tasks"
-    },
-    "/users/{userId}/diaryEntries/{entryId}": {
-      "schema": "DiaryEntry",
-      "description": "User smile diary photos and notes"
+    "/users/{userId}/plans/{accountId}/photos/{photoId}": {
+      "schema": "PhotoEntry",
+      "description": "One document per smile-diary photo; imageUrl points to Firebase Storage"
+    }
+  },
+  "storage": {
+    "/users/{userId}/plans/{accountId}/photos/{photoId}": {
+      "description": "Smile diary image files, uploaded directly rather than embedded as base64 in Firestore"
     }
   }
 }

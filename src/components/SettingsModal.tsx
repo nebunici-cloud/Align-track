@@ -16,32 +16,62 @@ import {
   Upload,
   Database,
   HardDrive,
+  AlertTriangle,
+  Loader2,
+  ShieldAlert,
+  Send,
+  Copy,
+  Check,
 } from 'lucide-react';
-import { AlignerSettings, WearLog } from '../types';
-import { User as FirebaseUser } from '../lib/firebase';
+import { AlignerSettings, WearLog, PhotoEntry, MaintenanceTask, NotificationLog, UserProfile } from '../types';
+import {
+  auth,
+  db,
+  doc,
+  setDoc,
+  User as FirebaseUser,
+  deleteUser,
+  reauthenticateWithPopup,
+  reauthenticateWithCredential,
+  googleProvider,
+  EmailAuthProvider,
+} from '../lib/firebase';
+import { formatLocalDate } from '../utils/storage';
 
 interface SettingsModalProps {
   isOpen: boolean;
   settings: AlignerSettings;
+  currentAccountId?: string;
   logs?: WearLog[];
+  photos?: PhotoEntry[];
+  tasks?: MaintenanceTask[];
+  notifications?: NotificationLog[];
+  accounts?: UserProfile[];
   authUser?: FirebaseUser | null;
   onClose: () => void;
   onSave: (newSettings: AlignerSettings) => void;
   onResetAll: () => void;
   onOpenAuthModal?: () => void;
   onImportBackup?: (backupData: any) => void;
+  onDeleteAllCloudData?: () => Promise<void>;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   settings,
+  currentAccountId,
   logs = [],
+  photos = [],
+  tasks = [],
+  notifications = [],
+  accounts = [],
   authUser,
   onClose,
   onSave,
   onResetAll,
   onOpenAuthModal,
   onImportBackup,
+  onDeleteAllCloudData,
 }) => {
   const [formData, setFormData] = useState<AlignerSettings>(settings);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -54,14 +84,58 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [rangeTo, setRangeTo] = useState<number>(3);
   const [rangeDays, setRangeDays] = useState<number>(10);
 
+  // Telegram bot linking state
+  const [telegramCode, setTelegramCode] = useState<string | null>(null);
+  const [generatingTelegramCode, setGeneratingTelegramCode] = useState<boolean>(false);
+  const [telegramCodeCopied, setTelegramCodeCopied] = useState<boolean>(false);
+  const [telegramError, setTelegramError] = useState<string | null>(null);
+
+  // Danger zone: account deletion state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
+  const [reauthPassword, setReauthPassword] = useState<string>('');
+  const [needsReauth, setNeedsReauth] = useState<boolean>(false);
+  const [deleting, setDeleting] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   if (!isOpen) return null;
+
+  const handleGenerateTelegramCode = async () => {
+    if (!authUser || !currentAccountId || generatingTelegramCode) return;
+    setGeneratingTelegramCode(true);
+    setTelegramError(null);
+    try {
+      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+      await setDoc(doc(db, 'telegramLinkCodes', code), {
+        uid: authUser.uid,
+        accountId: currentAccountId,
+        createdAt: new Date().toISOString(),
+      });
+      setTelegramCode(code);
+      setTelegramCodeCopied(false);
+      setTimeout(() => setTelegramCode((c) => (c === code ? null : c)), 15 * 60 * 1000);
+    } catch (err: any) {
+      console.error('Failed to generate Telegram linking code:', err);
+      setTelegramError(
+        err?.code === 'permission-denied'
+          ? 'Permission denied — the Firestore rules for this feature may not be deployed yet.'
+          : `Failed to generate code: ${err?.message || 'unknown error'}`
+      );
+    } finally {
+      setGeneratingTelegramCode(false);
+    }
+  };
 
   const handleExportBackup = () => {
     const backupData = {
-      version: '1.0',
+      version: '2.0',
       exportedAt: new Date().toISOString(),
       settings: formData,
-      logs: logs,
+      logs,
+      photos,
+      tasks,
+      notifications,
+      accounts,
     };
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -95,6 +169,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
     reader.readAsText(file);
     if (e.target) e.target.value = '';
+  };
+
+  const performAccountDeletion = async () => {
+    if (!auth.currentUser) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      if (onDeleteAllCloudData) {
+        await onDeleteAllCloudData();
+      }
+      await deleteUser(auth.currentUser);
+      // Auth state listener in App.tsx will pick up the sign-out and return to the login screen.
+    } catch (err: any) {
+      if (err?.code === 'auth/requires-recent-login') {
+        setNeedsReauth(true);
+      } else {
+        console.error('Account deletion failed:', err);
+        setDeleteError('Something went wrong deleting your account. Please try again.');
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleReauthenticate = async () => {
+    if (!auth.currentUser) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const isGoogleUser = auth.currentUser.providerData.some((p) => p.providerId === 'google.com');
+      if (isGoogleUser) {
+        await reauthenticateWithPopup(auth.currentUser, googleProvider);
+      } else if (auth.currentUser.email) {
+        await reauthenticateWithCredential(
+          auth.currentUser,
+          EmailAuthProvider.credential(auth.currentUser.email, reauthPassword)
+        );
+      }
+      setNeedsReauth(false);
+      await performAccountDeletion();
+    } catch (err) {
+      console.error('Re-authentication failed:', err);
+      setDeleteError('Re-authentication failed. Please check your password and try again.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -194,6 +314,83 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* TELEGRAM BOT LINKING CARD */}
+        {authUser && (
+          <div className="bg-slate-800/60 p-3.5 border border-slate-700/60 rounded-xl space-y-2.5">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+              <Send className="w-4 h-4 text-sky-400" />
+              <span>Connect Telegram</span>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-normal">
+              Link a Telegram chat to start/stop wear tracking with{' '}
+              <span className="font-mono text-slate-300">/out</span> and{' '}
+              <span className="font-mono text-slate-300">/in</span> — no need to open the app.
+            </p>
+
+            {telegramCode ? (
+              <div className="bg-slate-900/70 border border-sky-500/30 rounded-lg p-3 space-y-2 text-center">
+                <p className="text-[11px] text-slate-400">
+                  Open the bot and send <span className="font-mono text-sky-300">/link {telegramCode}</span> (expires
+                  in 15 minutes)
+                </p>
+
+                <div className="flex items-center justify-center gap-2">
+                  <p className="font-mono text-lg font-bold text-sky-300 tracking-widest">{telegramCode}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`/link ${telegramCode}`);
+                      setTelegramCodeCopied(true);
+                      setTimeout(() => setTelegramCodeCopied(false), 2000);
+                    }}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/70 transition-colors"
+                    title="Copy /link command"
+                  >
+                    {telegramCodeCopied ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+
+                {import.meta.env.VITE_TELEGRAM_BOT_USERNAME && (
+                  <a
+                    href={`https://t.me/${import.meta.env.VITE_TELEGRAM_BOT_USERNAME}?start=${telegramCode}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    Open bot &amp; link
+                  </a>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleGenerateTelegramCode}
+                disabled={generatingTelegramCode}
+                className="w-full px-3 py-1.5 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-60"
+              >
+                {generatingTelegramCode ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5" />
+                )}
+                <span>Generate Linking Code</span>
+              </button>
+            )}
+
+            {telegramError && (
+              <p className="text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2.5 py-1.5">
+                ⚠️ {telegramError}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* DATA STORAGE & BACKUP MANAGEMENT CARD */}
         <div className="bg-slate-800/60 p-3.5 border border-slate-700/60 rounded-xl space-y-3">
@@ -305,6 +502,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
 
+            {/* Current Tray Start Date — drives the "Day N" counter shown in the header */}
+            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2">
+              <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Current Tray Started On</span>
+              </span>
+              <input
+                type="date"
+                value={formData.trayStartDate ? formatLocalDate(new Date(formData.trayStartDate)) : formatLocalDate(new Date())}
+                onChange={(e) =>
+                  setFormData({ ...formData, trayStartDate: new Date(`${e.target.value}T00:00:00`).toISOString() })
+                }
+                className="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg p-2 text-xs focus:ring-1 focus:ring-cyan-400"
+              />
+              <p className="text-[10px] text-slate-400/90 leading-normal">
+                Sets which day of the current tray's schedule you're on (shown as "Day N" in the header). Only
+                changes here if it doesn't match reality — switching trays updates this automatically.
+              </p>
+            </div>
+
             {/* Plan Start Date & Start Time */}
             <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2">
               <span className="text-[11px] font-bold text-teal-300 flex items-center gap-1.5">
@@ -316,7 +533,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <label className="text-[10px] text-slate-400 block mb-1">Plan Start Date</label>
                   <input
                     type="date"
-                    value={formData.planStartDate || new Date().toISOString().split('T')[0]}
+                    value={formData.planStartDate || formatLocalDate(new Date())}
                     onChange={(e) => setFormData({ ...formData, planStartDate: e.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg p-2 text-xs focus:ring-1 focus:ring-teal-400"
                   />
@@ -700,6 +917,105 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
         </form>
+
+        {/* DANGER ZONE: account deletion */}
+        {authUser && (
+          <div className="border border-rose-500/30 bg-rose-500/5 rounded-xl p-3.5 space-y-3">
+            <div className="flex items-center gap-2 text-xs font-bold text-rose-300">
+              <ShieldAlert className="w-4 h-4 text-rose-400" />
+              <span>Danger Zone</span>
+            </div>
+
+            {!showDeleteConfirm ? (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] text-slate-400 leading-normal">
+                  Permanently delete your account and all treatment plans, logs, and photos. This cannot be undone.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="px-3 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold shrink-0 transition-colors"
+                >
+                  Delete Account
+                </button>
+              </div>
+            ) : needsReauth ? (
+              <div className="space-y-2.5">
+                <p className="text-[11px] text-amber-300 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>For your security, please sign in again to confirm this deletion.</span>
+                </p>
+                {auth.currentUser?.providerData.some((p) => p.providerId === 'google.com') ? (
+                  <button
+                    type="button"
+                    onClick={handleReauthenticate}
+                    disabled={deleting}
+                    className="w-full py-2 rounded-lg bg-white hover:bg-slate-100 text-slate-900 text-xs font-bold flex items-center justify-center gap-2 transition-all"
+                  >
+                    {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Re-authenticate with Google</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="password"
+                      placeholder="Current password"
+                      value={reauthPassword}
+                      onChange={(e) => setReauthPassword(e.target.value)}
+                      className="flex-1 bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 text-xs outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleReauthenticate}
+                      disabled={deleting || !reauthPassword}
+                      className="px-3 py-2 rounded-lg bg-rose-500 hover:bg-rose-400 text-slate-950 text-xs font-bold shrink-0 transition-colors disabled:opacity-50"
+                    >
+                      {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confirm'}
+                    </button>
+                  </div>
+                )}
+                {deleteError && <p className="text-[11px] text-rose-400">{deleteError}</p>}
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <p className="text-[11px] text-rose-300 leading-normal">
+                  This deletes every treatment profile, wear log, and photo tied to your account, and cannot be
+                  reversed. Type <strong className="font-mono">DELETE</strong> to confirm.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="DELETE"
+                    className="flex-1 bg-slate-900 border border-rose-500/40 text-slate-200 rounded-lg p-2 text-xs outline-none font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDeleteConfirm(false);
+                      setDeleteConfirmText('');
+                      setDeleteError(null);
+                    }}
+                    className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={performAccountDeletion}
+                    disabled={deleteConfirmText !== 'DELETE' || deleting}
+                    className="px-3 py-2 rounded-lg bg-rose-500 hover:bg-rose-400 text-slate-950 text-xs font-bold shrink-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Permanently Delete</span>
+                  </button>
+                </div>
+                {deleteError && <p className="text-[11px] text-rose-400">{deleteError}</p>}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

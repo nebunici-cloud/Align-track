@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Layers, Calendar, ArrowRight, CheckCircle2, Award, Sparkles, Camera, ShieldAlert } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AlignerSettings, getTrayDuration } from '../types';
 import { playAlertChime, triggerPushNotification } from '../utils/soundAndNotifications';
+import { getDayNumberSince } from '../utils/storage';
 
 interface TrayProgressCardProps {
   settings: AlignerSettings;
@@ -27,9 +29,7 @@ export const TrayProgressCard: React.FC<TrayProgressCardProps> = ({
   const currentDurationDays = getTrayDuration(settings, settings.currentTray);
   const isCustomInterval = settings.customTrayDurations && settings.customTrayDurations[settings.currentTray] !== undefined;
 
-  const startDate = new Date(settings.trayStartDate);
-  const now = new Date();
-  const diffDays = Math.max(1, Math.floor((now.getTime() - startDate.getTime()) / 86400000) + 1);
+  const diffDays = getDayNumberSince(settings.trayStartDate);
   const daysInCurrentTray = Math.min(currentDurationDays, diffDays);
   const daysRemaining = Math.max(0, currentDurationDays - daysInCurrentTray);
 
@@ -163,11 +163,15 @@ export const TrayProgressCard: React.FC<TrayProgressCardProps> = ({
         </div>
       </div>
 
-      {/* Tray Switch Confirmation Modal */}
-      {showSwitchModal && (
+      {/* Tray Switch Confirmation Modal - portaled to document.body so it
+          escapes this card's own backdrop-blur + overflow-hidden, which
+          would otherwise become its containing block (per the CSS filter/
+          backdrop-filter spec) and silently clip it instead of covering
+          the real viewport. */}
+      {showSwitchModal && createPortal(
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full max-h-[85dvh] overflow-y-auto p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 sticky -top-6 -mx-6 -mt-6 px-6 pt-6 bg-slate-900 z-10">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-teal-400" />
                 <h3 className="text-base font-bold text-slate-100">
@@ -266,7 +270,7 @@ export const TrayProgressCard: React.FC<TrayProgressCardProps> = ({
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex items-center gap-3 pt-2 sticky -bottom-6 -mx-6 -mb-6 px-6 pb-6 bg-slate-900">
               <button
                 onClick={() => setShowSwitchModal(false)}
                 className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
@@ -286,7 +290,8 @@ export const TrayProgressCard: React.FC<TrayProgressCardProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

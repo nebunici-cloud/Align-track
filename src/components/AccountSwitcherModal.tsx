@@ -1,33 +1,52 @@
 import React, { useState } from 'react';
-import { User, Plus, Check, Trash2, Edit3, Layers, Sparkles, UserCheck, ChevronRight, X } from 'lucide-react';
-import { UserProfile, AlignerSettings } from '../types';
+import { User, Plus, Trash2, Edit3, UserCheck, X, LogOut, Loader2 } from 'lucide-react';
+import { UserProfile } from '../types';
+import { auth, signOut, User as FirebaseUser } from '../lib/firebase';
 
 interface AccountSwitcherModalProps {
   isOpen: boolean;
   accounts: UserProfile[];
   currentAccountId: string;
+  authUser?: FirebaseUser | null;
   onClose: () => void;
   onSelectAccount: (id: string) => void;
   onCreateNewPlan: () => void;
   onDeleteAccount: (id: string) => void;
   onUpdateAccountProfile: (updatedProfile: UserProfile) => void;
+  onSuccessToast?: (msg: string) => void;
 }
 
 export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({
   isOpen,
   accounts,
   currentAccountId,
+  authUser,
   onClose,
   onSelectAccount,
   onCreateNewPlan,
   onDeleteAccount,
   onUpdateAccountProfile,
+  onSuccessToast,
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState<string>('');
   const [editPlanType, setEditPlanType] = useState<string>('');
+  const [signingOut, setSigningOut] = useState<boolean>(false);
 
   if (!isOpen) return null;
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await signOut(auth);
+      onSuccessToast?.('Signed out. Local data preserved.');
+      onClose();
+    } catch (err) {
+      console.error('Sign Out Error:', err);
+    } finally {
+      setSigningOut(false);
+    }
+  };
 
   const startEdit = (acc: UserProfile) => {
     setEditingId(acc.id);
@@ -191,6 +210,25 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({
             <span>Set Up New Individual Plan</span>
           </button>
         </div>
+
+        {/* Signed-in account & sign out */}
+        {authUser && (
+          <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-3">
+            <div className="min-w-0 text-xs text-slate-400">
+              <span className="block text-[10px] uppercase tracking-wider text-slate-500">Signed in as</span>
+              <span className="block truncate text-slate-300">{authUser.displayName || authUser.email}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-rose-300 hover:text-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 transition-all"
+            >
+              {signingOut ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogOut className="w-3.5 h-3.5" />}
+              <span>Sign Out</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

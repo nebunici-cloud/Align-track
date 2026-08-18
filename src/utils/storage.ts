@@ -128,8 +128,55 @@ export const INITIAL_NOTIFICATIONS: NotificationLog[] = [
   },
 ];
 
+/**
+ * Formats a Date as YYYY-MM-DD in the user's local timezone.
+ * Using toISOString() here would shift the date to UTC, which can
+ * misattribute logs to the wrong day near midnight in local time.
+ */
+export function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function getTodayDateString(): string {
-  return new Date().toISOString().split('T')[0];
+  return formatLocalDate(new Date());
+}
+
+/**
+ * Returns which calendar day of a span a given start date is currently on
+ * (Day 1 = the local calendar day the span started, Day 2 = the next local
+ * calendar day, etc). Counting by calendar day rather than by "hours elapsed
+ * / 24" matters here: a tray started at 9pm is on Day 2 as soon as it's
+ * tomorrow, not only after a full 24 hours have passed — the previous
+ * "floor(msElapsed / 86400000) + 1" approach used across Navbar,
+ * QuickTrackView, and TrayProgressCard could under-count by a day or more
+ * depending on what time of day the span started.
+ */
+export function getDayNumberSince(startDateInput: string): number {
+  const startDateStr = formatLocalDate(new Date(startDateInput));
+  const todayStr = getTodayDateString();
+  const startMidnight = new Date(`${startDateStr}T00:00:00`).getTime();
+  const todayMidnight = new Date(`${todayStr}T00:00:00`).getTime();
+  const daysElapsed = Math.round((todayMidnight - startMidnight) / 86400000);
+  return Math.max(1, daysElapsed + 1);
+}
+
+/** Reads a File into a base64 data URL. Used only as an offline/no-account fallback for photos. */
+export function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Failed to read file as data URL'));
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 /**
@@ -199,7 +246,7 @@ export function calculateWearStreak(logs: WearLog[], settings: AlignerSettings):
 
   for (let i = 0; i < 365; i++) {
     const d = new Date(now.getTime() - i * 86400000);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(d);
 
     // Cannot count days before treatment plan started
     if (dateStr < planStartStr) {
@@ -281,6 +328,30 @@ export function mergeLogs(localLogs: WearLog[], cloudLogs: WearLog[]): WearLog[]
     const timeB = new Date(b.startTime || b.date).getTime();
     return timeB - timeA;
   });
+}
+
+/**
+ * Merges local and cloud photo lists by id, same as mergeLogs. Without this,
+ * a photo just added optimistically to local state can be wiped out if a
+ * snapshot from just before the upload finished arrives right after it.
+ */
+export function mergePhotos(localPhotos: PhotoEntry[], cloudPhotos: PhotoEntry[]): PhotoEntry[] {
+  const map = new Map<string, PhotoEntry>();
+  if (Array.isArray(cloudPhotos)) {
+    for (const photo of cloudPhotos) {
+      if (photo && photo.id) {
+        map.set(photo.id, photo);
+      }
+    }
+  }
+  if (Array.isArray(localPhotos)) {
+    for (const photo of localPhotos) {
+      if (photo && photo.id) {
+        map.set(photo.id, photo);
+      }
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 export function loadLogs(accountId?: string): WearLog[] {
