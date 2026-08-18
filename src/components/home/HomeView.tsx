@@ -1,7 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, ChevronRight } from 'lucide-react';
+import { Plus, ChevronRight, Flame } from 'lucide-react';
 import { AlignerSettings, MaintenanceTask, OutReason, WearLog, WearStatus, getTrayDuration } from '../../types';
-import { getAvailableMinutesForDate, getDayNumberSince, getTodayDateString } from '../../utils/storage';
+import {
+  calculateWearStreak,
+  formatLocalDate,
+  getAvailableMinutesForDate,
+  getDayNumberSince,
+  getTodayDateString,
+} from '../../utils/storage';
+import { computeBand, getAllowedOutMinutes } from '../../utils/compliance';
 import { TrayceTheme } from '../../hooks/useTrayceTheme';
 import { TrayceHeader } from './TrayceHeader';
 import { WearProgressRing } from './WearProgressRing';
@@ -20,6 +27,8 @@ interface HomeViewProps {
   currentOutStartTime: string | null;
   currentOutReason: OutReason | null;
   todayLogs: WearLog[];
+  /** Full log history - needed for the wear streak and yesterday's total. */
+  allLogs: WearLog[];
   settings: AlignerSettings;
   tasks: MaintenanceTask[];
   onToggleStatus: (status: WearStatus, reason?: OutReason, presetMins?: number) => void;
@@ -53,6 +62,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   currentOutStartTime,
   currentOutReason,
   todayLogs,
+  allLogs,
   settings,
   tasks,
   onToggleStatus,
@@ -115,16 +125,38 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const greetingHour = new Date().getHours();
   const greeting = greetingHour < 12 ? 'Good morning' : greetingHour < 18 ? 'Good afternoon' : 'Good evening';
 
-  const isGoalMet = wornSeconds >= goalSeconds;
-  const paceMessage = useMemo(() => {
-    if (isGoalMet) return "Today's wear goal reached";
-    const remainingMinutes = Math.max(0, Math.ceil((goalSeconds - wornSeconds) / 60));
-    const hoursLeftInDay = 24 - new Date().getHours();
-    if (remainingMinutes <= hoursLeftInDay * 60) {
-      return "You're on pace to reach today's goal";
-    }
-    return `${formatDuration(remainingMinutes)} more today to reach your goal`;
-  }, [isGoalMet, goalSeconds, wornSeconds]);
+  // The out-time budget: a 22h/day wear goal is really "2h out allowed".
+  // This replaces the old pace message, whose "on pace" branch stayed true
+  // right up until the goal was arithmetically unreachable - reassuring all
+  // day, and only warning once nothing could be done about it.
+  const allowedOutMinutes = getAllowedOutMinutes(settings.dailyTargetHours);
+  const outRemainingMinutes = allowedOutMinutes - totalOutMins;
+  const band = computeBand(totalOutMins, allowedOutMinutes);
+
+  const budgetLabel =
+    band === 'missed'
+      ? `${formatDuration(Math.abs(outRemainingMinutes))} over today's out-time budget`
+      : `${formatDuration(outRemainingMinutes)} of out-time left today`;
+  const budgetColor =
+    band === 'missed'
+      ? 'var(--tz-accent-coral)'
+      : band === 'atRisk'
+      ? 'var(--tz-accent-sand)'
+      : 'var(--tz-text-secondary)';
+
+  // Streak and yesterday's result - both already derivable from data the app
+  // has, and the two numbers that make the screen feel different day to day.
+  const streak = useMemo(() => calculateWearStreak(allLogs, settings), [allLogs, settings]);
+
+  const yesterdayWornLabel = useMemo(() => {
+    const yesterdayStr = formatLocalDate(new Date(Date.now() - 86400000));
+    const { availableMins, isBeforeStart } = getAvailableMinutesForDate(yesterdayStr, settings);
+    if (isBeforeStart || availableMins <= 0) return null;
+    const outMins = allLogs
+      .filter((l) => l.date === yesterdayStr)
+      .reduce((acc, l) => acc + (l.durationMinutes || 0), 0);
+    return formatDuration(Math.max(0, availableMins - outMins));
+  }, [allLogs, settings]);
 
   // 24 hourly rhythm segments (worn / out / future), mirroring the same
   // out-log inspection the classic tracker view uses.
@@ -214,7 +246,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </button>
       </div>
 
-      {wearStatus === 'out' ? (
+      {wearStatus === 'out' && (
         <div
           className="flex items-center justify-between rounded-xl px-3 py-2"
           style={{ backgroundColor: 'var(--tz-bg-canvas)', border: '1px solid var(--tz-border-subtle)' }}
@@ -226,13 +258,51 @@ export const HomeView: React.FC<HomeViewProps> = ({
             {formatStopwatch(elapsedOutSeconds)}
           </span>
         </div>
-      ) : (
-        <p className="text-xs" style={{ color: 'var(--tz-text-secondary)' }}>
-          {paceMessage}
-        </p>
       )}
+
+      {/* Shown in both states - the budget is most decision-relevant while
+          out, since that's when it's actively draining. */}
+      <p
+        className={`text-xs ${band === 'onTrack' ? '' : 'font-semibold'}`}
+        style={{ color: budgetColor }}
+        aria-live="polite"
+      >
+        {budgetLabel}
+      </p>
     </div>
   );
+
+  // Quiet by default: a brand-new user with no streak and no yesterday gets
+  // nothing here rather than a row of zeroes.
+  const renderInsightStrip = () => {
+    if (streak <= 0 && !yesterdayWornLabel) return null;
+    return (
+      <div
+        className="rounded-[18px] px-4 py-2.5 flex items-center gap-2.5 text-xs"
+        style={{ backgroundColor: 'var(--tz-surface-card)', border: '1px solid var(--tz-border-subtle)' }}
+      >
+        {streak > 0 && (
+          <span className="flex items-center gap-1.5 font-semibold" style={{ color: 'var(--tz-brand-teal)' }}>
+            <Flame className="w-3.5 h-3.5 shrink-0" />
+            {streak}-day streak
+          </span>
+        )}
+        {streak > 0 && yesterdayWornLabel && (
+          <span aria-hidden="true" style={{ color: 'var(--tz-text-secondary)' }}>
+            &middot;
+          </span>
+        )}
+        {yesterdayWornLabel && (
+          <span style={{ color: 'var(--tz-text-secondary)' }}>
+            Yesterday{' '}
+            <span className="font-semibold tabular-nums" style={{ color: 'var(--tz-text-primary)' }}>
+              {yesterdayWornLabel}
+            </span>
+          </span>
+        )}
+      </div>
+    );
+  };
 
   const renderGreetingChips = () => (
     <div>
@@ -283,6 +353,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <TrayceHeader theme={theme} onThemeChange={onThemeChange} avatarUrl={avatarUrl} onOpenProfile={onOpenProfile} />
           {renderGreetingChips()}
           {renderHeroCard()}
+          {renderInsightStrip()}
 
           <TodaysRhythm
             segments={rhythmSegments}
@@ -316,6 +387,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         <div className="grid gap-6 mt-6" style={{ gridTemplateColumns: '65% 1fr' }}>
           <div className="space-y-6 min-w-0">
             {renderHeroCard()}
+            {renderInsightStrip()}
             <TodaysRhythm
               segments={rhythmSegments}
               wornLabel={`${wearHours}h ${wearMins.toString().padStart(2, '0')}m worn`}

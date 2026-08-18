@@ -969,6 +969,7 @@ export default function App() {
               currentOutStartTime={currentOutStartTime}
               currentOutReason={currentOutReason}
               todayLogs={todayLogs}
+              allLogs={logs}
               settings={settings}
               tasks={tasks}
               onToggleStatus={handleToggleWearStatus}

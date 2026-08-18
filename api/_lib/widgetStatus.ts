@@ -1,9 +1,14 @@
 import type { DocumentReference } from 'firebase-admin/firestore';
 import type { ActiveTimerState } from '../../src/services/firebaseService';
 import type { AlignerSettings } from '../../src/types';
+import { computeBand, getAllowedOutMinutes, type ComplianceBand } from '../../src/utils/compliance';
 
 export type RhythmSegmentState = 'worn' | 'out' | 'future';
-export type ComplianceBand = 'onTrack' | 'atRisk' | 'missed' | 'none';
+// Re-exported so existing importers of this module keep working; the model
+// itself lives in src/utils/compliance.ts, shared with the web app's home
+// screen so the two can't drift apart.
+export { computeBand };
+export type { ComplianceBand };
 
 export interface WidgetStatusPayload {
   wearStatus: ActiveTimerState['wearStatus'];
@@ -38,18 +43,6 @@ export interface WidgetStatusPayload {
   allowedOutMinutes: number;
   /** Oldest first, ending with today. */
   last7Days: { dateStr: string; band: ComplianceBand }[];
-}
-
-/**
- * onTrack / atRisk / missed thresholds, shared between today's live band
- * and each day in the 7-day history row so they mean the same thing
- * everywhere.
- */
-export function computeBand(outMinutes: number, allowedOutMinutes: number): ComplianceBand {
-  const outRemaining = allowedOutMinutes - outMinutes;
-  if (outRemaining > 30) return 'onTrack';
-  if (outRemaining > 0) return 'atRisk';
-  return 'missed';
 }
 
 /**
@@ -213,8 +206,7 @@ export async function computeWidgetStatus(
     intervals.push({ startIso: activeTimer.startTime, endIso: null });
   }
 
-  const dailyTargetHours = settings?.dailyTargetHours ?? 22;
-  const allowedOutMinutes = (24 - dailyTargetHours) * 60;
+  const allowedOutMinutes = getAllowedOutMinutes(settings?.dailyTargetHours ?? 22);
 
   const last7Days = await computeLast7DaysCompliance(planRef, settings, todayStr, allowedOutMinutes, outMinutesToday);
 

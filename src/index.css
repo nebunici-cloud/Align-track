@@ -18,6 +18,8 @@
   --tz-brand-teal: #18bcae;
   --tz-brand-mint: #80ddd0;
   --tz-accent-sand: #f1bc5b;
+  /* Over-budget / missed state - distinct from sand's "running low" warning. */
+  --tz-accent-coral: #e8734f;
   --tz-state-inactive: #38536a;
   --tz-focus-ring: #9debe0;
 }
@@ -33,6 +35,8 @@
   --tz-brand-teal: #13aa9e;
   --tz-brand-mint: #69d2c4;
   --tz-accent-sand: #d99b35;
+  /* Over-budget / missed state - distinct from sand's "running low" warning. */
+  --tz-accent-coral: #c4502c;
   --tz-state-inactive: #d5e2e2;
   --tz-focus-ring: #087f76;
 }
