@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Layers, Calendar, ArrowRight, CheckCircle2, Award, Sparkles, Camera, ShieldAlert } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AlignerSettings, getTrayDuration } from '../types';
@@ -162,8 +163,12 @@ export const TrayProgressCard: React.FC<TrayProgressCardProps> = ({
         </div>
       </div>
 
-      {/* Tray Switch Confirmation Modal */}
-      {showSwitchModal && (
+      {/* Tray Switch Confirmation Modal - portaled to document.body so it
+          escapes this card's own backdrop-blur + overflow-hidden, which
+          would otherwise become its containing block (per the CSS filter/
+          backdrop-filter spec) and silently clip it instead of covering
+          the real viewport. */}
+      {showSwitchModal && createPortal(
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full max-h-[85dvh] overflow-y-auto p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3 sticky -top-6 -mx-6 -mt-6 px-6 pt-6 bg-slate-900 z-10">
@@ -285,7 +290,8 @@ export const TrayProgressCard: React.FC<TrayProgressCardProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
