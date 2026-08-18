@@ -1,14 +1,8 @@
 import type { DocumentReference } from 'firebase-admin/firestore';
 import type { ActiveTimerState } from '../../src/services/firebaseService';
 import type { AlignerSettings } from '../../src/types';
-import { computeBand, getAllowedOutMinutes, type ComplianceBand } from '../../src/utils/compliance';
-
 export type RhythmSegmentState = 'worn' | 'out' | 'future';
-// Re-exported so existing importers of this module keep working; the model
-// itself lives in src/utils/compliance.ts, shared with the web app's home
-// screen so the two can't drift apart.
-export { computeBand };
-export type { ComplianceBand };
+export type ComplianceBand = 'onTrack' | 'atRisk' | 'missed' | 'none';
 
 export interface WidgetStatusPayload {
   wearStatus: ActiveTimerState['wearStatus'];
@@ -43,6 +37,32 @@ export interface WidgetStatusPayload {
   allowedOutMinutes: number;
   /** Oldest first, ending with today. */
   last7Days: { dateStr: string; band: ComplianceBand }[];
+}
+
+/**
+ * onTrack / atRisk / missed thresholds, shared between today's live band
+ * and each day in the 7-day history row.
+ *
+ * DELIBERATELY DUPLICATED from src/utils/compliance.ts - do NOT replace this
+ * with an import from src/. Vercel compiles api/** into the lambda but never
+ * ships the src/ tree there (it's built to static assets), so a runtime
+ * import from src/ resolves fine at compile time and then dies in production
+ * with ERR_MODULE_NOT_FOUND on every invocation. The existing `import type`
+ * lines above are safe only because TypeScript erases them. Same reason
+ * getTrayDuration and getDayNumberSince are mirrored below rather than
+ * imported. compliance.parity.test.ts asserts this copy stays in step with
+ * the src/ one.
+ */
+export function computeBand(outMinutes: number, allowedOutMinutes: number): ComplianceBand {
+  const outRemaining = allowedOutMinutes - outMinutes;
+  if (outRemaining > 30) return 'onTrack';
+  if (outRemaining > 0) return 'atRisk';
+  return 'missed';
+}
+
+/** Mirrors getAllowedOutMinutes in src/utils/compliance.ts - see above. */
+export function getAllowedOutMinutes(dailyTargetHours: number): number {
+  return Math.max(0, Math.round((24 - dailyTargetHours) * 60));
 }
 
 /**
